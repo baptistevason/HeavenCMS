@@ -1,0 +1,106 @@
+<?php
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 Thierry Gustin
+/** Mises à jour : version disponible, sauvegarde conseillée, installation en un clic, retour à la version précédente. */
+defined('HEAVEN') || exit;
+
+use Heaven\Admin;
+use Heaven\AdminUpdate;
+use Heaven\I18n;
+use Heaven\Icons;
+use Heaven\Security;
+use Heaven\Settings;
+use Heaven\Update;
+
+$s = $v['state'];
+$p = $v['pending'];
+$lang = I18n::lang();
+$failed = is_array($s['failed'] ?? null) && $p && ($s['failed']['version'] ?? '') === $p['version'] ? $s['failed'] : null;
+$last = is_array($s['last'] ?? null) ? $s['last'] : null;
+// Périmée : annonce gardée dont l'échéance est passée (le canal n'a plus été re-signé) ; signalée, sans rien bloquer.
+$expired = Update::expired($s);
+$error = (string) ($s['error'] ?? '');
+?>
+<div class="page">
+  <div class="topbar"><div><h1><?= e(t('Mises à jour')) ?></h1>
+    <p><?= e(t('Heaven t’avertit dès qu’une nouvelle version sort. Tu choisis quand l’installer : un clic, en toute sécurité.')) ?></p></div></div>
+
+  <section class="card">
+    <div class="card-head"><h2><?= e(t('Version installée : {v}', ['v' => HEAVEN_VERSION])) ?></h2>
+      <form method="post" action="<?= e(admin_url('update')) ?>"><?= Security::csrfField() ?><input type="hidden" name="action" value="check">
+        <button class="btn btn-sm" type="submit"><?= Icons::svg('refresh') ?><?= e(t('Vérifier maintenant')) ?></button></form></div>
+    <?php if ($p): ?>
+      <p class="update-new"><?= Icons::svg('zap') ?><strong><?= e(t('Heaven {v} est disponible.', ['v' => $p['version']])) ?></strong>
+        <?php if ($p['date'] !== ''): ?><span class="muted"><?= e(t('Publiée le {d}.', ['d' => fmt_date((int) strtotime($p['date']), $lang)])) ?></span><?php endif ?>
+        <?php if ($p['notes'] !== ''): ?><a href="<?= e($p['notes']) ?>" target="_blank" rel="noopener"><?= e(t('Voir les nouveautés')) ?> →</a><?php endif ?></p>
+    <?php elseif (Update::current($s)): ?>
+      <p class="update-ok"><?= Icons::svg('circle-check') ?><?= e(t('Tu as la dernière version de Heaven.')) ?></p>
+    <?php endif ?>
+    <p class="small muted">
+      <?php if (!empty($s['checked'])): ?><?= e(t('Dernière vérification : {d}.', ['d' => fmt_date((int) $s['checked'], $lang, true)])) ?> <?php endif ?>
+      <?= e(Settings::get('updates.check', true) ? t('Heaven vérifie deux fois par jour, sans rien installer sans ton accord (réglable dans Réglages › Avancé).') : t('Vérification automatique désactivée (Réglages › Avancé) : clique sur « Vérifier maintenant ».')) ?></p>
+    <?php if ($error !== '' && $error !== 'expired'): ?>
+      <p class="hint" data-state="bad"><?= Icons::svg('alert') ?><?= e(t('Dernière vérification impossible : {e}.', ['e' => AdminUpdate::reason($error)])) ?></p>
+    <?php endif ?>
+    <?php if ($expired > 0): ?>
+      <div class="notice warn" role="status"><span><?= Icons::svg('alert') ?></span><p><?= e(AdminUpdate::expired($expired)) ?></p></div>
+    <?php endif ?>
+    <?php if ($failed): ?>
+      <div class="notice warn"><span>↩️</span><p><?= e(t('Le {d}, la version {v} ne fonctionnait pas correctement sur ton serveur : Heaven est revenu tout seul à ta version. Vérifie la version de PHP et ses extensions chez ton hébergeur, ou réessaie plus tard.', ['d' => fmt_date((int) $failed['date'], $lang, true), 'v' => $p['version']])) ?></p></div>
+    <?php endif ?>
+  </section>
+
+  <?php if ($p): ?>
+  <section class="card" id="installer" aria-labelledby="install-title">
+    <h2 id="install-title"><?= e(t('Installer Heaven {v}', ['v' => $p['version']])) ?></h2>
+    <div class="notice warn" role="note"><span><?= Icons::svg('save') ?></span><p><strong><?= e(t('Avant toute mise à jour, fais une sauvegarde.')) ?></strong>
+      <?= e(t('La mise à jour ne touche ni à tes contenus, ni à tes images, ni à tes réglages, et Heaven revient tout seul en arrière si quelque chose ne va pas. Une sauvegarde récente reste ta meilleure assurance.')) ?></p></div>
+    <form method="post" action="<?= e(admin_url('backup')) ?>"><?= Security::csrfField() ?><input type="hidden" name="back" value="update">
+      <?= Admin::partial('partials/confirm', []) ?>
+      <button class="btn" type="submit"<?= $v['zip'] ? '' : ' disabled' ?>><?= Icons::svg('download') ?><?= e(t('Télécharger une sauvegarde')) ?></button>
+      <?php if (!$v['zip']): ?><p class="hint"><?= e(t('Extension zip indisponible : copie les dossiers data/ et media/ par FTP.')) ?></p><?php endif ?></form>
+    <hr>
+    <?php if ($v['blockers']): ?>
+      <div class="notice bad" role="alert"><span><?= Icons::svg('ban') ?></span><div>
+        <p><strong><?= e(t('Mise à jour en un clic impossible sur ce serveur :')) ?></strong></p>
+        <ul><?php foreach ($v['blockers'] as $b): ?><li><?= e($b) ?></li><?php endforeach ?></ul>
+        <p><?= e(t('Tu peux toujours mettre à jour par FTP :')) ?> <a href="https://github.com/baptistevason/HeavenCMS/blob/main/docs/GUIDE.md#mettre-à-jour-sauvegarder-déménager" target="_blank" rel="noopener"><?= e(t('guide de mise à jour')) ?></a></p>
+      </div></div>
+    <?php else: ?>
+      <?php if ($v['modified']): ?>
+        <div class="notice warn"><span><?= Icons::svg('pen') ?></span><div>
+          <p><strong><?= e(t('Fichiers de Heaven modifiés à la main :')) ?></strong> <?= e(t('la mise à jour les remplace par leur nouvelle version. Ta version reste dans la version gardée (bouton « Revenir à la version précédente »). Pour une retouche durable, utilise le CSS personnalisé (Réglages › Apparence).')) ?></p>
+          <ul class="small mono"><?php foreach (array_slice($v['modified'], 0, 20) as $f): ?><li><?= e($f) ?></li><?php endforeach ?></ul>
+        </div></div>
+      <?php endif ?>
+      <form method="post" action="<?= e(admin_url('update')) ?>"><?= Security::csrfField() ?><input type="hidden" name="action" value="install">
+        <label class="check"><input type="checkbox" name="saved" value="1" required><span><?= e(t('J’ai une sauvegarde récente de mon site.')) ?></span></label>
+        <?= Admin::partial('partials/confirm', ['required' => false, 'hint' => t('Inutile si tu viens de le saisir (moins de 15 minutes), par exemple pour la sauvegarde.')]) ?>
+        <button class="btn btn-primary" type="submit" data-busy="<?= e(t('Mise à jour en cours… ne ferme pas cette page.')) ?>"><?= Icons::svg('download') ?><?= e(t('Mettre à jour vers {v}', ['v' => $p['version']])) ?></button>
+      </form>
+    <?php endif ?>
+    <details class="small update-how"><summary><?= e(t('Comment ça marche ?')) ?></summary>
+      <ol>
+        <li><?= e(t('Heaven télécharge la nouvelle version depuis GitHub et vérifie sa signature : seule une version publiée par le mainteneur de Heaven est acceptée.')) ?></li>
+        <li><?= e(t('Il contrôle chaque fichier, et sa compatibilité avec ta version de PHP, avant de toucher à quoi que ce soit.')) ?></li>
+        <li><?= e(t('Il met l’ancienne version de côté et installe la nouvelle en un instant : contenus, images, comptes et réglages ne bougent pas.')) ?></li>
+        <li><?= e(t('Il vérifie que ton site et ton administration s’affichent comme avant ; sinon, il revient tout seul à l’ancienne version.')) ?></li>
+      </ol></details>
+  </section>
+  <?php endif ?>
+
+  <?php if ($v['previous'] !== ''): ?>
+  <section class="card">
+    <h2><?= e(t('Revenir à la version précédente')) ?></h2>
+    <p class="small muted"><?= e(t('La version {v} a été gardée lors de la dernière mise à jour. Si quelque chose ne te convient pas, reviens-y en un clic : tes contenus ne changent pas.', ['v' => $v['previous']])) ?></p>
+    <form method="post" action="<?= e(admin_url('update')) ?>"><?= Security::csrfField() ?><input type="hidden" name="action" value="rollback">
+      <?= Admin::partial('partials/confirm', []) ?>
+      <button class="btn" type="submit" data-confirm="<?= e(t('Revenir à la version {v} ?', ['v' => $v['previous']])) ?>" data-busy="<?= e(t('Retour en cours…')) ?>"><?= Icons::svg('back') ?><?= e(t('Revenir à la version {v}', ['v' => $v['previous']])) ?></button></form>
+  </section>
+  <?php endif ?>
+
+  <?php if ($last): ?>
+    <?php $vars = ['from' => (string) $last['from'], 'to' => (string) $last['to'], 'd' => fmt_date((int) $last['date'], $lang, true)]; ?>
+    <p class="small muted"><?= e(!empty($last['rollback']) ? t('Dernière opération : retour de {from} à {to}, le {d}.', $vars) : t('Dernière mise à jour : de {from} à {to}, le {d}.', $vars)) ?></p>
+  <?php endif ?>
+</div>

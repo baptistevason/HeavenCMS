@@ -1,0 +1,15 @@
+# Données d'une installation locale (jamais versionnées)
+heaven/data/*
+!heaven/data/.htaccess
+!heaven/data/index.html
+heaven/cache/*
+!heaven/cache/.htaccess
+!heaven/cache/index.html
+!heaven/cache/pages/
+heaven/cache/pages/*
+!heaven/cache/pages/index.html
+heaven/media/*
+!heaven/media/.htaccess
+!heaven/media/index.html
+heaven/heaven-config.php
+heaven/site/

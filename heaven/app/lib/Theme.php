@@ -1,0 +1,497 @@
+<?php
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 Thierry Gustin
+declare(strict_types=1);
+
+namespace Heaven;
+
+defined('HEAVEN') || exit;
+
+/** Thème du site public : gabarits, CSS en ligne, couleurs accessibles et textes en 6 langues. */
+final class Theme
+{
+    public const FONTS = [
+        'system' => ['Système (moderne)', 'system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif'],
+        'grotesque' => ['Néo-grotesque', 'Inter,Roboto,"Helvetica Neue","Arial Nova","Nimbus Sans",Arial,sans-serif'],
+        'humanist' => ['Humaniste', 'Seravek,"Gill Sans Nova",Ubuntu,Calibri,"DejaVu Sans",source-sans-pro,sans-serif'],
+        'geometric' => ['Géométrique', 'Avenir,Montserrat,Corbel,"URW Gothic",source-sans-pro,sans-serif'],
+        'rounded' => ['Arrondie', 'ui-rounded,"Hiragino Maru Gothic ProN",Quicksand,Comfortaa,Manjari,"Arial Rounded MT","Arial Rounded MT Bold",Calibri,source-sans-pro,sans-serif'],
+        'serif' => ['Serif moderne', 'Charter,"Bitstream Charter","Sitka Text",Cambria,serif'],
+        'oldstyle' => ['Serif élégante', '"Iowan Old Style","Palatino Linotype","URW Palladio L",P052,serif'],
+        'mono' => ['Machine à écrire', 'ui-monospace,"Cascadia Code","Source Code Pro",Menlo,Consolas,"DejaVu Sans Mono",monospace'],
+    ];
+
+    /**
+     * Thèmes livrés : une feuille de style ajoutée au thème de base (seul le thème choisi est inséré dans la page)
+     * et des réglages conseillés, appliqués quand on choisit le thème (couleur, polices, en-tête, cartes).
+     */
+    public const THEMES = [
+        'heaven' => ['accent' => '#5b4cf0', 'font_head' => 'system', 'font_body' => 'system', 'header' => 'left', 'cards' => 'grid'],
+        'editorial' => ['accent' => '#b42318', 'font_head' => 'oldstyle', 'font_body' => 'serif', 'header' => 'center', 'cards' => 'grid'],
+        'atelier' => ['accent' => '#c2410c', 'font_head' => 'humanist', 'font_body' => 'humanist', 'header' => 'left', 'cards' => 'grid'],
+        'studio' => ['accent' => '#111111', 'font_head' => 'grotesque', 'font_body' => 'grotesque', 'header' => 'left', 'cards' => 'grid'],
+        'boutique' => ['accent' => '#0f766e', 'font_head' => 'geometric', 'font_body' => 'system', 'header' => 'center', 'cards' => 'grid'],
+        'contraste' => ['accent' => '#1d4ed8', 'font_head' => 'system', 'font_body' => 'system', 'header' => 'left', 'cards' => 'list'],
+    ];
+
+    private const LANG_ORDER = ['fr', 'es', 'en', 'de', 'it', 'pt'];
+    private const STRINGS = [
+        'skip' => ['Aller au contenu', 'Ir al contenido', 'Skip to content', 'Zum Inhalt springen', 'Vai al contenuto', 'Ir para o conteúdo'],
+        'menu' => ['Menu principal', 'Menú principal', 'Main menu', 'Hauptmenü', 'Menu principale', 'Menu principal'],
+        'footer_menu' => ['Liens utiles', 'Enlaces útiles', 'Useful links', 'Nützliche Links', 'Link utili', 'Links úteis'],
+        'breadcrumb' => ['Fil d’Ariane', 'Ruta de navegación', 'Breadcrumb', 'Brotkrümelnavigation', 'Percorso', 'Navegação estrutural'],
+        'published_on' => ['Publié le', 'Publicado el', 'Published', 'Veröffentlicht am', 'Pubblicato il', 'Publicado em'],
+        'updated_on' => ['Mis à jour le', 'Actualizado el', 'Updated', 'Aktualisiert am', 'Aggiornato il', 'Atualizado em'],
+        'by' => ['Par', 'Por', 'By', 'Von', 'Di', 'Por'],
+        'reading' => ['{n} min de lecture', '{n} min de lectura', '{n} min read', '{n} Min. Lesezeit', '{n} min di lettura', '{n} min de leitura'],
+        'toc' => ['Sommaire', 'Índice', 'Contents', 'Inhalt', 'Indice', 'Índice'],
+        'key_points' => ['L’essentiel', 'Lo esencial', 'Key takeaways', 'Das Wichtigste', 'In breve', 'O essencial'],
+        'faq' => ['Questions fréquentes', 'Preguntas frecuentes', 'Frequently asked questions', 'Häufige Fragen', 'Domande frequenti', 'Perguntas frequentes'],
+        'team' => ['Notre équipe', 'Nuestro equipo', 'Our team', 'Unser Team', 'Il nostro team', 'Nossa equipe'],
+        'latest_posts' => ['Derniers articles', 'Últimos artículos', 'Latest posts', 'Neueste Beiträge', 'Ultimi articoli', 'Últimos artigos'],
+        'all_posts' => ['Voir tous les articles', 'Ver todos los artículos', 'See all posts', 'Alle Beiträge ansehen', 'Vedi tutti gli articoli', 'Ver todos os artigos'],
+        'related' => ['À lire aussi', 'También te puede interesar', 'Read next', 'Auch lesenswert', 'Leggi anche', 'Leia também'],
+        'about_author' => ['À propos de l’auteur', 'Sobre el autor', 'About the author', 'Über den Autor', 'Sull’autore', 'Sobre o autor'],
+        'posts_by' => ['Articles de {name}', 'Artículos de {name}', 'Posts by {name}', 'Beiträge von {name}', 'Articoli di {name}', 'Artigos de {name}'],
+        'search' => ['Rechercher', 'Buscar', 'Search', 'Suchen', 'Cerca', 'Pesquisar'],
+        'search_label' => ['Rechercher sur le site', 'Buscar en el sitio', 'Search this site', 'Website durchsuchen', 'Cerca nel sito', 'Pesquisar no site'],
+        'search_results' => ['{n} résultat(s) pour « {q} »', '{n} resultado(s) para «{q}»', '{n} result(s) for “{q}”', '{n} Ergebnis(se) für „{q}“', '{n} risultato/i per «{q}»', '{n} resultado(s) para «{q}»'],
+        'no_results' => ['Aucun résultat. Essayez d’autres mots-clés.', 'Sin resultados. Prueba con otras palabras.', 'No results. Try other keywords.', 'Keine Ergebnisse. Versuchen Sie andere Suchbegriffe.', 'Nessun risultato. Prova con altre parole.', 'Nenhum resultado. Tente outras palavras.'],
+        'not_found' => ['Page introuvable', 'Página no encontrada', 'Page not found', 'Seite nicht gefunden', 'Pagina non trovata', 'Página não encontrada'],
+        'not_found_text' => ['Cette page n’existe pas ou a été déplacée. Une recherche ou le menu vous aideront à retrouver votre chemin.', 'Esta página no existe o se ha movido. Usa el buscador o el menú para encontrar lo que buscas.', 'This page doesn’t exist or has moved. Try searching or use the menu.', 'Diese Seite existiert nicht oder wurde verschoben. Nutzen Sie die Suche oder das Menü.', 'Questa pagina non esiste o è stata spostata. Usa la ricerca o il menu.', 'Esta página não existe ou foi movida. Use a pesquisa ou o menu.'],
+        'back_home' => ['Retour à l’accueil du site', 'Volver a la página principal', 'Back to the homepage', 'Zur Startseite', 'Torna alla pagina principale', 'Voltar à página inicial'],
+        'page_n' => ['Page {n}', 'Página {n}', 'Page {n}', 'Seite {n}', 'Pagina {n}', 'Página {n}'],
+        'newer' => ['Articles plus récents', 'Artículos más recientes', 'Newer posts', 'Neuere Beiträge', 'Articoli più recenti', 'Artigos mais recentes'],
+        'older' => ['Articles plus anciens', 'Artículos anteriores', 'Older posts', 'Ältere Beiträge', 'Articoli meno recenti', 'Artigos anteriores'],
+        'pagination' => ['Pagination', 'Paginación', 'Pagination', 'Seitennavigation', 'Paginazione', 'Paginação'],
+        'powered' => ['Propulsé par', 'Creado con', 'Powered by', 'Erstellt mit', 'Realizzato con', 'Feito com'],
+        'callout_info' => ['Bon à savoir', 'Bueno saberlo', 'Good to know', 'Gut zu wissen', 'Buono a sapersi', 'Bom saber'],
+        'callout_tip' => ['Astuce', 'Consejo', 'Tip', 'Tipp', 'Consiglio', 'Dica'],
+        'callout_warning' => ['Attention', 'Atención', 'Warning', 'Achtung', 'Attenzione', 'Atenção'],
+        'callout_success' => ['À retenir', 'Para recordar', 'Remember', 'Merken', 'Da ricordare', 'Para lembrar'],
+        // Publicité (AdSense) : seules étiquettes permises par Google au-dessus d'une annonce (support.google.com/adsense/answer/4533986).
+        'ad_label' => ['Publicités', 'Anuncios', 'Advertisements', 'Werbung', 'Pubblicità', 'Publicidade'],
+        // Affiliation : titre et texte de la mention publicitaire, bouton d'un produit que l'IA n'a pas relié.
+        'aff_title' => ['Liens d’affiliation', 'Enlaces de afiliado', 'Affiliate links', 'Affiliate-Links', 'Link di affiliazione', 'Links de afiliado'],
+        'aff_note' => ['Cette page contient des liens d’affiliation : si vous achetez par l’un d’eux, nous percevons une commission, sans surcoût pour vous.',
+            'Esta página contiene enlaces de afiliado: si compras a través de alguno de ellos, recibimos una comisión, sin coste adicional para ti.',
+            'This page contains affiliate links: if you buy through one of them, we earn a commission, at no extra cost to you.',
+            'Diese Seite enthält Affiliate-Links: Wenn Sie über einen davon kaufen, erhalten wir eine Provision, ohne Mehrkosten für Sie.',
+            'Questa pagina contiene link di affiliazione: se acquisti tramite uno di essi, riceviamo una commissione, senza costi aggiuntivi per te.',
+            'Esta página contém links de afiliado: se comprar através de um deles, recebemos uma comissão, sem custo adicional para si.'],
+        'aff_button' => ['{name} : voir l’offre', '{name}: ver la oferta', '{name}: see the offer', '{name}: zum Angebot', '{name}: vedi l’offerta', '{name}: ver a oferta'],
+        'callout_note' => ['Note', 'Nota', 'Note', 'Hinweis', 'Nota', 'Nota'],
+        'video' => ['Vidéo', 'Vídeo', 'Video', 'Video', 'Video', 'Vídeo'],
+        'play_video' => ['Lire la vidéo', 'Ver el vídeo', 'Play video', 'Video abspielen', 'Guarda il video', 'Ver o vídeo'],
+        'form_name' => ['Nom', 'Nombre', 'Name', 'Name', 'Nome', 'Nome'],
+        'form_email' => ['E-mail', 'Correo electrónico', 'Email', 'E-Mail', 'E-mail', 'E-mail'],
+        'form_message' => ['Message', 'Mensaje', 'Message', 'Nachricht', 'Messaggio', 'Mensagem'],
+        'form_send' => ['Envoyer', 'Enviar', 'Send', 'Senden', 'Invia', 'Enviar'],
+        'form_sending' => ['Envoi…', 'Enviando…', 'Sending…', 'Wird gesendet…', 'Invio…', 'A enviar…'],
+        'form_thanks' => ['Merci ! Votre message a bien été envoyé.', '¡Gracias! Tu mensaje se ha enviado.', 'Thank you! Your message has been sent.', 'Danke! Ihre Nachricht wurde gesendet.', 'Grazie! Il tuo messaggio è stato inviato.', 'Obrigado! A sua mensagem foi enviada.'],
+        'form_error' => ['L’envoi a échoué. Vérifiez les champs et réessayez.', 'No se pudo enviar. Revisa los campos e inténtalo de nuevo.', 'Sending failed. Check the fields and try again.', 'Senden fehlgeschlagen. Bitte prüfen und erneut versuchen.', 'Invio non riuscito. Controlla i campi e riprova.', 'O envio falhou. Verifique os campos e tente de novo.'],
+        'form_notice' => ['Vos données servent uniquement à vous répondre.', 'Tus datos solo se usan para responderte.', 'Your data is only used to reply to you.', 'Ihre Daten werden nur zur Beantwortung verwendet.', 'I tuoi dati servono solo per risponderti.', 'Os seus dados servem apenas para lhe responder.'],
+        'privacy' => ['Politique de confidentialité', 'Política de privacidad', 'Privacy policy', 'Datenschutzerklärung', 'Informativa sulla privacy', 'Política de privacidade'],
+        'website' => ['Site', 'Sitio web', 'Website', 'Website', 'Sito', 'Site'],
+        'contact' => ['Contact', 'Contacto', 'Contact', 'Kontakt', 'Contatto', 'Contacto'],
+        'pages' => ['Pages', 'Páginas', 'Pages', 'Seiten', 'Pagine', 'Páginas'],
+        'posts' => ['Articles', 'Artículos', 'Posts', 'Beiträge', 'Articoli', 'Artigos'],
+        'categories' => ['Catégories', 'Categorías', 'Categories', 'Kategorien', 'Categorie', 'Categorias'],
+        'full_content' => ['Tout le contenu en Markdown', 'Todo el contenido en Markdown', 'Full content in Markdown', 'Gesamter Inhalt in Markdown', 'Tutto il contenuto in Markdown', 'Todo o conteúdo em Markdown'],
+        'read_in' => ['Lire en', 'Leer en', 'Read in', 'Lesen auf', 'Leggi in', 'Ler em'],
+        'edit' => ['Modifier', 'Editar', 'Edit', 'Bearbeiten', 'Modifica', 'Editar'],
+        'social' => ['Réseaux sociaux', 'Redes sociales', 'Social media', 'Soziale Medien', 'Social', 'Redes sociais'],
+        'shop' => ['Boutique', 'Tienda', 'Shop', 'Shop', 'Negozio', 'Loja'],
+        'products' => ['Produits', 'Productos', 'Products', 'Produkte', 'Prodotti', 'Produtos'],
+        'price' => ['Prix', 'Precio', 'Price', 'Preis', 'Prezzo', 'Preço'],
+        'buy' => ['Acheter', 'Comprar', 'Buy now', 'Jetzt kaufen', 'Acquista', 'Comprar'],
+        'in_stock' => ['En stock', 'En stock', 'In stock', 'Auf Lager', 'Disponibile', 'Em stock'],
+        'out_of_stock' => ['Épuisé', 'Agotado', 'Sold out', 'Ausverkauft', 'Esaurito', 'Esgotado'],
+        'preorder' => ['Précommande', 'Reserva', 'Pre-order', 'Vorbestellung', 'Preordine', 'Pré-encomenda'],
+        'unavailable' => ['Bientôt disponible', 'Próximamente', 'Coming soon', 'Bald erhältlich', 'Presto disponibile', 'Brevemente disponível'],
+        'from_price' => ['À partir de {price}', 'Desde {price}', 'From {price}', 'Ab {price}', 'Da {price}', 'Desde {price}'],
+        'was_price' => ['Prix habituel', 'Precio habitual', 'Regular price', 'Normalpreis', 'Prezzo abituale', 'Preço habitual'],
+        'sale' => ['Promo', 'Oferta', 'Sale', 'Angebot', 'Offerta', 'Promoção'],
+        'choose_option' => ['Choisissez une option', 'Elige una opción', 'Choose an option', 'Option wählen', 'Scegli un’opzione', 'Escolha uma opção'],
+        'secure_payment' => ['Paiement sécurisé', 'Pago seguro', 'Secure payment', 'Sichere Zahlung', 'Pagamento sicuro', 'Pagamento seguro'],
+        'secure_by' => ['Paiement sécurisé par {name}', 'Pago seguro con {name}', 'Secure payment with {name}', 'Sichere Zahlung über {name}', 'Pagamento sicuro con {name}', 'Pagamento seguro com {name}'],
+        'shipping_cost' => ['Livraison : {price}', 'Envío: {price}', 'Shipping: {price}', 'Versand: {price}', 'Spedizione: {price}', 'Envio: {price}'],
+        'shipping_free' => ['Livraison offerte', 'Envío gratis', 'Free shipping', 'Kostenloser Versand', 'Spedizione gratuita', 'Envio grátis'],
+        'free_from' => ['offerte dès {price}', 'gratis desde {price}', 'free over {price}', 'kostenlos ab {price}', 'gratuita da {price}', 'grátis a partir de {price}'],
+        'delivery_days' => ['Livré en {min} à {max} jours', 'Entrega en {min}-{max} días', 'Delivered in {min}–{max} days', 'Lieferung in {min}–{max} Tagen', 'Consegna in {min}-{max} giorni', 'Entrega em {min} a {max} dias'],
+        'returns' => ['Retours sous {n} jours', 'Devoluciones en {n} días', 'Returns within {n} days', 'Rückgabe innerhalb von {n} Tagen', 'Resi entro {n} giorni', 'Devoluções em {n} dias'],
+        'free_returns' => ['Retours gratuits sous {n} jours', 'Devoluciones gratuitas en {n} días', 'Free returns within {n} days', 'Kostenlose Rückgabe innerhalb von {n} Tagen', 'Resi gratuiti entro {n} giorni', 'Devoluções grátis em {n} dias'],
+        'terms' => ['Conditions générales de vente', 'Condiciones generales de venta', 'Terms of sale', 'Allgemeine Geschäftsbedingungen', 'Condizioni generali di vendita', 'Condições gerais de venda'],
+        'delivery' => ['Livraison et retours', 'Envíos y devoluciones', 'Shipping & returns', 'Versand & Rückgabe', 'Spedizioni e resi', 'Envios e devoluções'],
+        'all' => ['Tout', 'Todo', 'All', 'Alle', 'Tutto', 'Tudo'],
+        'all_products' => ['Voir toute la boutique', 'Ver toda la tienda', 'See all products', 'Alle Produkte ansehen', 'Vedi tutto il negozio', 'Ver toda a loja'],
+        'related_products' => ['Vous aimerez aussi', 'También te puede gustar', 'You may also like', 'Das könnte Ihnen auch gefallen', 'Potrebbe piacerti anche', 'Também poderá gostar'],
+        'no_products' => ['Aucun produit pour l’instant.', 'Todavía no hay productos.', 'No products yet.', 'Noch keine Produkte.', 'Ancora nessun prodotto.', 'Ainda não há produtos.'],
+        'product_photos' => ['Photos du produit', 'Fotos del producto', 'Product photos', 'Produktfotos', 'Foto del prodotto', 'Fotos do produto'],
+        'thanks_title' => ['Merci pour votre commande !', '¡Gracias por tu pedido!', 'Thank you for your order!', 'Vielen Dank für Ihre Bestellung!', 'Grazie per il tuo ordine!', 'Obrigado pela sua encomenda!'],
+        'thanks_text' => ['Votre paiement est confirmé : vous allez recevoir un reçu par e-mail. Une question ? Contactez-nous.', 'Tu pago está confirmado: recibirás un recibo por correo electrónico. ¿Alguna pregunta? Escríbenos.', 'Your payment is confirmed: you will receive a receipt by email. Any questions? Get in touch.', 'Ihre Zahlung ist bestätigt: Sie erhalten eine Quittung per E-Mail. Fragen? Schreiben Sie uns.', 'Il pagamento è confermato: riceverai una ricevuta via e-mail. Domande? Scrivici.', 'O seu pagamento está confirmado: vai receber um recibo por e-mail. Alguma dúvida? Contacte-nos.'],
+    ];
+    private const WORDS = [
+        'fr' => ['page' => 'page', 'author' => 'auteur', 'search' => 'recherche', 'shop' => 'boutique'],
+        'es' => ['page' => 'pagina', 'author' => 'autor', 'search' => 'buscar', 'shop' => 'tienda'],
+        'en' => ['page' => 'page', 'author' => 'author', 'search' => 'search', 'shop' => 'shop'],
+        'de' => ['page' => 'seite', 'author' => 'autor', 'search' => 'suche', 'shop' => 'shop'],
+        'it' => ['page' => 'pagina', 'author' => 'autore', 'search' => 'cerca', 'shop' => 'negozio'],
+        'pt' => ['page' => 'pagina', 'author' => 'autor', 'search' => 'pesquisa', 'shop' => 'loja'],
+    ];
+
+    /** Taille maximale du CSS personnalisé, en octets : il est inséré dans chaque page. */
+    public const CUSTOM_MAX = 65536;
+
+    private static ?string $css = null;
+    private static ?string $custom = null;
+    /** Apparence essayée dans l'aperçu des réglages (jamais enregistrée ni mise en cache). */
+    private static ?array $preview = null;
+    private static bool $shop = false;
+    /** Direction artistique en vigueur (false : pas encore calculée). */
+    private static array|false|null $direction = false;
+
+    public static function t(string $key, ?string $lang = null, array $vars = []): string
+    {
+        $lang = $lang ?: (string) Settings::get('lang', 'fr');
+        $i = array_search($lang, self::LANG_ORDER, true);
+        $text = self::STRINGS[$key][$i === false ? 0 : $i] ?? $key;
+        foreach ($vars as $k => $v) {
+            $text = str_replace('{' . $k . '}', (string) $v, $text);
+        }
+        return $text;
+    }
+
+    /** Mots réservés des URL (pagination, auteur, recherche) dans la langue du site. */
+    public static function words(?string $lang = null): array
+    {
+        return self::WORDS[$lang ?: (string) Settings::get('lang', 'fr')] ?? self::WORDS['fr'];
+    }
+
+    public static function authorPath(array $profile): string
+    {
+        return Content::blogPath() . '/' . self::words()['author'] . '/' . $profile['slug'];
+    }
+
+    /* ─────────────────────────────── Rendu ─────────────────────────────── */
+
+    public static function render(string $view, array $v): string
+    {
+        $v['content'] = self::partial($view, $v);
+        return self::typography(self::partial('layout', $v), (string) ($v['lang'] ?? ''));
+    }
+
+    /**
+     * Typographie française : espace insécable avant « : ; ! ? » et à l'intérieur des guillemets.
+     * Seuls les nœuds texte sont modifiés (jamais les balises, scripts, styles ni blocs de code).
+     */
+    public static function typography(string $html, string $lang): string
+    {
+        if ($lang !== 'fr') {
+            return $html;
+        }
+        // En cas d'échec (texte démesuré), la page est rendue telle quelle plutôt que vide.
+        return preg_replace_callback(
+            '~(<(script|style|pre|code|textarea)\b.*?</\2>)|(<[^>]*>)|([^<]+)~si',
+            static function (array $m): string {
+                if (!isset($m[4]) || $m[4] === '') {
+                    return $m[0];
+                }
+                $text = preg_replace('/[ \x{00A0}]+([:;!?»])/u', "\u{00A0}$1", $m[4]) ?? $m[4];
+                return preg_replace('/«[ \x{00A0}]*/u', "«\u{00A0}", $text) ?? $text;
+            },
+            $html
+        ) ?? $html;
+    }
+
+    /** Fichier CSS du noyau, ou son remplacement déclaré par le thème du site. */
+    private static function coreCss(string $name): string
+    {
+        return self::site() ? Themes::coreCss($name) : (string) @file_get_contents(HEAVEN_ROOT . '/app/theme/' . $name);
+    }
+
+    /** Un thème du site est-il actif ou essayé ? (Sans lui, la classe Themes n'est jamais chargée.) */
+    private static ?bool $site = null;
+
+    /** Oublie l'indicateur (thème activé, désactivé ou essayé pendant la requête). */
+    public static function forgetSite(): void
+    {
+        self::$site = null;
+        self::$css = null;
+    }
+
+    private static function site(): bool
+    {
+        return self::$site ??= Store::exists('theme');
+    }
+
+    public static function partial(string $name, array $v): string
+    {
+        // Gabarit remplacé par le thème du site (site/themes/<id>/templates/) : en cas d'erreur, celui du noyau prend le relais.
+        $site = self::site() ? Themes::template($name) : null;
+        if ($site !== null) {
+            try {
+                return self::include($site, $v);
+            } catch (\Throwable $e) {
+                Themes::failed($name, $e);
+            }
+        }
+        // Archive : la vue de l'installation est compressée (gzip, lue par zlib) ; les gabarits du site, jamais.
+        $file = HEAVEN_ROOT . '/app/theme/' . $name . '.php';
+        if (is_file($file . '.gz')) {
+            if (!extension_loaded('zlib')) {
+                http_response_code(500);
+                header('Content-Type: text/plain; charset=utf-8');
+                exit("L'extension PHP zlib est indispensable à Heaven : active-la dans le panneau PHP de ton hébergeur.\n");
+            }
+            $file = 'compress.zlib://' . $file . '.gz';
+        }
+        return self::include($file, $v);
+    }
+
+    /** Exécute un gabarit avec ses seules variables ($v) et renvoie sa sortie. */
+    private static function include(string $file, array $v): string
+    {
+        $level = ob_get_level();
+        ob_start();
+        try {
+            (static function (string $__file, array $v): void {
+                include $__file;
+            })($file, $v);
+        } catch (\Throwable $e) {
+            while (ob_get_level() > $level) {
+                ob_end_clean();
+            }
+            throw $e;
+        }
+        return (string) ob_get_clean();
+    }
+
+    /** Grille de cartes d'articles. */
+    public static function cards(array $entries, string $lang, int $level = 3): string
+    {
+        return self::partial('cards', ['entries' => $entries, 'lang' => $lang, 'level' => $level]);
+    }
+
+    /** Grille de cartes produit. */
+    public static function products(array $entries, string $lang, int $level = 3): string
+    {
+        return self::partial('products', ['entries' => $entries, 'lang' => $lang, 'level' => $level]);
+    }
+
+    /* ─────────────────────────────── Styles ─────────────────────────────── */
+
+    /** Apparence en vigueur : réglages du site, ou ceux essayés dans l'aperçu. */
+    public static function look(): array
+    {
+        $a = array_merge((array) Settings::get('appearance'), self::$preview ?? []);
+        $a['theme'] = isset(self::THEMES[$a['theme'] ?? '']) ? $a['theme'] : 'heaven';
+        $a['header'] = ($a['header'] ?? '') === 'center' ? 'center' : 'left';
+        $a['cards'] = ($a['cards'] ?? '') === 'list' ? 'list' : 'grid';
+        if ($d = self::direction()) {
+            $a['accent'] = $d['accent'];
+        }
+        return $a;
+    }
+
+    /** Direction artistique choisie (Réglages › Apparence) ou essayée dans l'aperçu ; null : thème classique. */
+    public static function direction(): ?array
+    {
+        if (self::$direction === false) {
+            $d = self::$preview['direction'] ?? Settings::get('appearance.direction');
+            self::$direction = is_array($d) && $d !== [] ? Design::normalize($d) : null;
+        }
+        return self::$direction;
+    }
+
+    /** Préchargement de la police de titre de la direction (« » pour un thème classique). */
+    public static function preload(): string
+    {
+        $d = self::direction();
+        return $d ? Design::preload($d) : '';
+    }
+
+    /** Essaie une apparence pour l'aperçu en direct (valeurs déjà vérifiées par l'appelant). */
+    public static function preview(array $look): void
+    {
+        self::$preview = $look;
+        self::$css = null;
+        self::$direction = false;
+        if (isset($look['site_theme']) && is_string($look['site_theme'])) {
+            Themes::preview($look['site_theme']);
+            self::$site = true;
+        }
+    }
+
+    /** Styles de la boutique pour cette page, même boutique fermée (aperçu d'une fiche produit dans l'éditeur). */
+    public static function withShop(): void
+    {
+        if (!self::$shop) {
+            self::$shop = true;
+            self::$css = null;
+        }
+    }
+
+    /** Classes du <body> qui portent les variantes de mise en page. */
+    public static function bodyClass(): string
+    {
+        $a = self::look();
+        return 'theme-' . $a['theme'] . ($a['header'] === 'center' ? ' hdr-center' : '') . ($a['cards'] === 'list' ? ' cards-list' : '');
+    }
+
+    /** Blocs d'annonces (menu Publicité) : seulement quand la publicité est en service, sinon rien (page à l'octet près). */
+    private static function ads(): string
+    {
+        return Ads::active() ? "\n" . self::coreCss('ads.css') : '';
+    }
+
+    /** Micro-animations (Réglages › Apparence), avant le CSS personnalisé ; coupées, rien n'est ajouté (page à l'octet près). */
+    private static function motion(array $a): string
+    {
+        return empty($a['motion']) ? '' : "\n" . self::coreCss('motion.css');
+    }
+
+    /** CSS du thème, personnalisé et minifié, destiné à être inséré dans la page. */
+    public static function css(): string
+    {
+        if (self::$css !== null) {
+            return self::$css;
+        }
+        $a = self::look();
+        if ($d = self::direction()) {
+            // Direction artistique : thème de base sans son mode sombre automatique (la direction choisit clair ou sombre).
+            $css = (string) preg_replace('~/\*dark\*/.*?/\*/dark\*/~s', '', self::coreCss('theme.css')) . Design::css($d) . self::motion($a) . self::ads() . (self::site() ? Themes::css() : '');
+            $custom = self::custom();
+            $css .= $custom !== '' ? "\n" . $custom : '';
+            if (!self::$shop && !Shop::enabled()) {
+                $css = (string) preg_replace('~/\*shop\*/.*?/\*/shop\*/~s', '', $css);
+            }
+            return self::$css = self::minify($css);
+        }
+        $accent = Sanitize::color($a['accent'] ?? '', '#5b4cf0');
+        $vars = ':root{--accent:' . $accent
+            . ';--on-accent:' . (self::contrast($accent, '#ffffff') >= 4.5 ? '#ffffff' : '#111111')
+            . ';--link:' . self::readable($accent, '#ffffff')
+            . ';--link-dark:' . self::readable($accent, '#121218')
+            . ';--font:' . (self::FONTS[$a['font_body'] ?? 'system'][1] ?? self::FONTS['system'][1])
+            . ';--font-head:' . (self::FONTS[$a['font_head'] ?? 'system'][1] ?? self::FONTS['system'][1]) . '}';
+        $css = self::coreCss('theme.css');
+        if ($a['theme'] !== 'heaven') {
+            $css .= self::coreCss('themes/' . $a['theme'] . '.css');
+        }
+        // Thème du site (site/themes/<id>/) : après le thème de base, avant le CSS personnalisé, qui garde le dernier mot.
+        $css .= self::motion($a) . self::ads() . (self::site() ? Themes::css() : '');
+        // CSS personnalisé du site, après le thème : il l'emporte et suit les mêmes repères (mode sombre, boutique).
+        $custom = self::custom();
+        if ($custom !== '') {
+            $css .= "\n" . $custom;
+        }
+        if (($a['dark'] ?? 'auto') !== 'auto') {
+            $css = (string) preg_replace('~/\*dark\*/.*?/\*/dark\*/~s', '', $css);
+        }
+        // Styles de la boutique : seulement quand elle est ouverte (la plupart des sites n'en ont pas).
+        if (!self::$shop && !Shop::enabled()) {
+            $css = (string) preg_replace('~/\*shop\*/.*?/\*/shop\*/~s', '', $css);
+        }
+        return self::$css = self::minify($vars . $css);
+    }
+
+    /** CSS personnalisé (Réglages › Apparence), rangé dans data/ : les mises à jour de Heaven ne le touchent pas. */
+    public static function custom(): string
+    {
+        if (self::$custom === null) {
+            $stored = Store::read('custom-css');
+            self::$custom = is_array($stored) ? (string) ($stored['css'] ?? '') : '';
+        }
+        return self::$custom;
+    }
+
+    /** Enregistre le CSS personnalisé (nettoyé) ; vide si le champ est vide. Renvoie le CSS conservé. */
+    public static function saveCustom(string $css): string
+    {
+        $css = self::cleanCss($css);
+        if ($css === '') {
+            Store::delete('custom-css');
+        } else {
+            Store::write('custom-css', ['css' => $css, 'updated' => time()]);
+        }
+        self::$custom = $css;
+        self::$css = null;
+        Cache::purge();
+        return $css;
+    }
+
+    /**
+     * CSS saisi dans l'administration, prêt à être inséré dans la balise <style> de chaque page :
+     * aucun « < » (la balise ne peut pas être refermée), aucun @import (pas de requête bloquante),
+     * aucun caractère de contrôle, et une taille bornée.
+     */
+    public static function cleanCss(string $css, int $max = self::CUSTOM_MAX): string
+    {
+        $css = str_replace(["\r\n", "\r", '<'], ["\n", "\n", ''], Sanitize::utf8($css));
+        $css = (string) preg_replace('/[\x00-\x08\x0B-\x1F\x7F]/', '', $css);
+        // Jamais de feuille externe : @import retiré jusqu'à ce qu'il n'en reste plus (« @im@import;port » en cachait un),
+        // ainsi que toute règle @ dont le nom contient un échappement CSS (« @\69mport » se lit @import).
+        do {
+            $before = $css;
+            $css = (string) preg_replace(['/@import\b[^;{}]*;?/i', '/(?:^|[;{}])\s*\K@[\w-]*\\\\[^;{}]*;?/'], '', $css);
+        } while ($css !== $before);
+        return trim(mb_strcut($css, 0, $max, 'UTF-8'));
+    }
+
+    public static function minify(string $css): string
+    {
+        // Prudent : on ne touche jamais aux espaces autour de + et - (obligatoires dans calc()).
+        $css = preg_replace('~/\*.*?\*/~s', '', $css) ?? $css;
+        $css = preg_replace('~\s+~', ' ', $css) ?? $css;
+        $css = preg_replace('~\s*([{};,>])\s*~', '$1', $css) ?? $css;
+        $css = preg_replace('~:\s+~', ':', $css) ?? $css;
+        $css = preg_replace('~([{;])([a-z-]+)\s+:~i', '$1$2:', $css) ?? $css;
+        return trim(str_replace(';}', '}', $css));
+    }
+
+    /** Empreinte SHA-256 du style en ligne, pour la politique de sécurité (CSP). */
+    public static function hash(string $css): string
+    {
+        return base64_encode(hash('sha256', $css, true));
+    }
+
+    /* ─────────────────────────── Couleurs (WCAG) ─────────────────────────── */
+
+    private static function rgb(string $hex): array
+    {
+        return array_map('hexdec', str_split(ltrim($hex, '#'), 2));
+    }
+
+    private static function luminance(string $hex): float
+    {
+        $c = array_map(function (int $v): float {
+            $v /= 255;
+            return $v <= 0.03928 ? $v / 12.92 : (($v + 0.055) / 1.055) ** 2.4;
+        }, self::rgb($hex));
+        return 0.2126 * $c[0] + 0.7152 * $c[1] + 0.0722 * $c[2];
+    }
+
+    public static function contrast(string $a, string $b): float
+    {
+        $l1 = self::luminance($a);
+        $l2 = self::luminance($b);
+        return (max($l1, $l2) + 0.05) / (min($l1, $l2) + 0.05);
+    }
+
+    /** Version de la couleur assez contrastée (≥ 4,5:1) sur le fond donné. */
+    public static function readable(string $color, string $background): string
+    {
+        $towards = self::luminance($background) > 0.5 ? 0 : 255;
+        $rgb = self::rgb($color);
+        for ($i = 0; $i < 20 && self::contrast(self::hex($rgb), $background) < 4.5; $i++) {
+            $rgb = array_map(fn ($v) => (int) round($v + ($towards - $v) * 0.12), $rgb);
+        }
+        return self::hex($rgb);
+    }
+
+    private static function hex(array $rgb): string
+    {
+        return sprintf('#%02x%02x%02x', ...array_map(fn ($v) => max(0, min(255, (int) $v)), $rgb));
+    }
+}

@@ -1,0 +1,24 @@
+<?php
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 Thierry Gustin
+defined('HEAVEN') || exit;
+
+use Heaven\Icons;
+use Heaven\Security;
+use Heaven\Settings;
+?>
+<form class="auth-card" method="post" action="<?= e(admin_url('login')) ?>" novalidate>
+  <a class="logo" href="<?= e(path_to('/')) ?>"><span class="logo-mark"><?= Icons::mark() ?></span><span><b>Heaven</b><small><?= e(Settings::get('name')) ?></small></span></a>
+  <h1><?= e(t('Bon retour')) ?></h1>
+  <p class="sub"><?= e(t('Connecte-toi pour gérer ton site.')) ?></p>
+  <?php if ($v['bye']): ?><div class="notice ok" role="status"><span><?= Icons::svg('circle-check') ?></span><p><?= e(t('À bientôt ! Tu es bien déconnecté.')) ?></p></div><?php endif ?>
+  <?php if ($v['error'] !== ''): ?><div class="notice bad" role="alert"><span><?= Icons::svg('alert') ?></span><p><?= e($v['error']) ?></p></div><?php endif ?>
+  <?= Security::formField() ?>
+  <input type="hidden" name="next" value="<?= e($v['next']) ?>">
+  <label class="field"><span class="label"><?= e(t('E-mail')) ?></span>
+    <input type="email" name="email" value="<?= e($v['email']) ?>" autocomplete="username" required autofocus></label>
+  <label class="field"><span class="label"><?= e(t('Mot de passe')) ?></span>
+    <span class="password"><input type="password" name="password" autocomplete="current-password" required><button type="button" data-reveal><?= e(t('Afficher')) ?></button></span></label>
+  <button class="btn btn-primary btn-lg btn-block" type="submit"><?= e(t('Se connecter')) ?></button>
+  <p class="small muted center"><?= e(t('Mot de passe oublié ? Un administrateur peut le réinitialiser depuis « Utilisateurs ».')) ?></p>
+</form>

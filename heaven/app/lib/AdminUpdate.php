@@ -1,0 +1,108 @@
+<?php
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 Thierry Gustin
+declare(strict_types=1);
+
+namespace Heaven;
+
+defined('HEAVEN') || exit;
+
+/** Mises à jour : nouvelle version annoncée, installation en un clic (au choix de l'administrateur), retour en arrière. */
+final class AdminUpdate
+{
+    public static function page(array $user): never
+    {
+        Update::latest();
+        $pending = Update::pending();
+        Admin::view('update', [
+            'state' => Update::state(),
+            'pending' => $pending,
+            'blockers' => $pending !== null ? Update::blockers($pending) : [],
+            'modified' => $pending !== null ? Update::modified() : [],
+            'previous' => Update::previous(),
+            'zip' => class_exists('ZipArchive'),
+        ], t('Mises à jour'));
+    }
+
+    public static function action(array $user): never
+    {
+        switch (Req::input('action')) {
+            case 'check':
+                Update::latest(true);
+                $state = Update::state();
+                $error = (string) ($state['error'] ?? '');
+                if ($error === 'expired') {
+                    Admin::back('update', self::expired(Update::expired($state)), 'warn');
+                }
+                if ($error !== '') {
+                    Admin::back('update', t('Vérification impossible : {e}. Nouvel essai automatique dans une heure.', ['e' => self::reason($error)]), 'warn');
+                }
+                $pending = Update::pending();
+                Admin::back('update', $pending !== null ? t('Nouvelle version disponible : Heaven {v}.', ['v' => $pending['version']]) : t('Heaven est à jour (version {v}).', ['v' => HEAVEN_VERSION]));
+            case 'install':
+                $pending = Update::pending();
+                if ($pending === null) {
+                    Admin::back('update', t('Aucune nouvelle version à installer.'), 'warn');
+                }
+                if (!Req::bool('saved')) {
+                    Admin::back('update', t('Coche d’abord « J’ai une sauvegarde récente de mon site ».'), 'bad');
+                }
+                if (!Auth::confirmed($user)) {
+                    Admin::back('update', t('Mot de passe incorrect.'), 'bad');
+                }
+                $result = Update::install($pending);
+                // Le code vient peut-être de changer : aucune vue n'est affichée par cette requête, la suivante utilise le nouveau code.
+                if (!$result['ok']) {
+                    Admin::back('update', $result['error'], 'bad');
+                }
+                if ($result['kept']) {
+                    Session::flash('warn', t('Fichiers personnalisés conservés tels quels : {f}.', ['f' => implode(', ', $result['kept'])]));
+                }
+                if (!$result['checked']) {
+                    Session::flash('warn', t('Ton hébergeur empêche Heaven de contrôler le site lui-même : ouvre-le pour vérifier que tout va bien. En cas de souci, reviens à la version précédente ci-dessous.'));
+                }
+                Admin::back('update', t('Heaven est passé à la version {v}. Tes contenus, images et réglages n’ont pas bougé.', ['v' => $result['version']]));
+            case 'rollback':
+                if (!Auth::confirmed($user)) {
+                    Admin::back('update', t('Mot de passe incorrect.'), 'bad');
+                }
+                $result = Update::rollback();
+                if ($result['ok'] && $result['kept']) {
+                    Session::flash('warn', t('Fichiers modifiés depuis la mise à jour, conservés tels quels : {f}. Leur version d’avant est rangée dans cache/update.', ['f' => implode(', ', $result['kept'])]));
+                }
+                $result['ok']
+                    ? Admin::back('update', t('Retour à la version {v} effectué. Tes contenus n’ont pas bougé.', ['v' => $result['version']]))
+                    : Admin::back('update', $result['error'], 'bad');
+        }
+        Admin::back('update');
+    }
+
+    /** Vérification en arrière-plan depuis l'administration : au plus une lecture de l'annonce toutes les 12 h. */
+    public static function check(array $user): never
+    {
+        if (Update::stale()) {
+            Update::latest(true);
+        }
+        $pending = Update::pending();
+        Http::json(['ok' => true, 'available' => $pending !== null, 'version' => $pending['version'] ?? '',
+            'text' => $pending !== null ? t('Heaven {v} est disponible (tu as la {current}).', ['v' => $pending['version'], 'current' => HEAVEN_VERSION]) : '']);
+    }
+
+    public static function reason(string $error): string
+    {
+        return match ($error) {
+            'signature' => t('annonce refusée, sa signature ne correspond pas à celle du mainteneur'),
+            'format' => t('annonce illisible'),
+            'sodium' => t('extension PHP sodium absente'),
+            'replay' => t('annonce plus ancienne que celle déjà reçue, ignorée'),
+            default => t('GitHub injoignable depuis ton serveur'),
+        };
+    }
+
+    /** Annonce gardée périmée (le canal n'a plus été re-signé) : jamais « à jour », sans bloquer pour autant. */
+    public static function expired(int $since): string
+    {
+        return t('Annonce de mise à jour périmée depuis le {d} : une version plus récente existe peut-être. Nouvel essai automatique dans une heure.',
+            ['d' => fmt_date($since, I18n::lang())]);
+    }
+}

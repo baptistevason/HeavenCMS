@@ -1,0 +1,892 @@
+<?php
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 Thierry Gustin
+declare(strict_types=1);
+
+namespace Heaven;
+
+defined('HEAVEN') || exit;
+
+/**
+ * Blocs de contenu : validation, rendu HTML, export Markdown (GEO) et extraction
+ * (texte, sommaire, FAQ, images, liens) pour l'analyse SEO.
+ */
+final class Blocks
+{
+    public const TYPES = [
+        'paragraph', 'heading', 'list', 'quote', 'image', 'callout', 'faq', 'table',
+        'button', 'video', 'code', 'divider', 'hero', 'features', 'team', 'posts', 'products', 'contact',
+    ];
+    public const CALLOUTS = ['info' => 'ℹ️', 'tip' => '💡', 'warning' => '⚠️', 'success' => '✅', 'note' => '📝'];
+    private const RESERVED_IDS = ['main', 'top', 'toc', 'menu', 'contenu', 'content', 'search', 'site-nav'];
+    /** Rendu du mode Visuel en cours (aperçu d'édition de l'administration). */
+    private static bool $edit = false;
+
+    /* ───────────────────────────── Validation ───────────────────────────── */
+
+    public static function normalize(mixed $blocks): array
+    {
+        $out = [];
+        foreach (is_array($blocks) ? array_slice($blocks, 0, 2000) : [] as $block) {
+            if (is_array($block) && ($clean = self::one($block) ?? self::preserve($block)) !== null) {
+                $out[] = $clean;
+            }
+        }
+        return $out;
+    }
+
+    /** Type d'un bloc fourni par une capacité (« boutique/variante ») ou disparu : nom simple, borné. */
+    private const FOREIGN = '~^[a-z][a-z0-9-]{0,39}(/[a-z][a-z0-9-]{0,39})?$~';
+    /** Taille maximale des données d'un bloc conservé (JSON), et profondeur. */
+    private const PRESERVED_MAX = 32768;
+
+    /**
+     * Bloc d'un type que ce site ne sait pas afficher (capacité absente, désactivée ou incompatible) : conservé tel quel,
+     * borné (32 Ko de JSON, 8 niveaux), jamais affiché ni exécuté, et rendu intact à chaque enregistrement. Ses données sont
+     * rangées dans « data » : aucun service commun (analyse, export, IA) ne les lit comme celles d'un bloc connu. Un type du
+     * noyau resté invalide (paragraphe vide…) n'est jamais conservé ainsi : il disparaît comme avant.
+     */
+    public static function preserve(array $b): ?array
+    {
+        $type = (string) ($b['type'] ?? '');
+        if (!preg_match(self::FOREIGN, $type) || in_array($type, self::TYPES, true)) {
+            return null;
+        }
+        $data = !empty($b['preserved']) && is_array($b['data'] ?? null) ? $b['data'] : array_diff_key($b, ['type' => true, 'preserved' => true]);
+        $json = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE, 8);
+        if (!is_string($json) || strlen($json) > self::PRESERVED_MAX) {
+            return null;
+        }
+        $data = json_decode($json, true);
+        return ['type' => $type, 'preserved' => true, 'data' => is_array($data) ? $data : []];
+    }
+
+    /** Données d'origine d'un bloc conservé (pour la capacité qui le reprend), ou le bloc lui-même. */
+    public static function original(array $b): array
+    {
+        return !empty($b['preserved']) && is_array($b['data'] ?? null) ? ['type' => (string) $b['type']] + $b['data'] : $b;
+    }
+
+    private static function one(array $b): ?array
+    {
+        $type = (string) ($b['type'] ?? '');
+        $s = static fn (string $k, int $max = 300): string => Sanitize::text($b[$k] ?? '', $max);
+        $rich = static fn (string $k): string => Sanitize::inline(is_string($b[$k] ?? null) ? $b[$k] : '');
+        $pick = static fn (string $k, array $allowed, string $default): string =>
+            in_array($b[$k] ?? null, $allowed, true) ? (string) $b[$k] : $default;
+
+        switch ($type) {
+            case 'paragraph':
+                $text = $rich('text');
+                return $text === '' ? null : ['type' => 'paragraph', 'text' => $text];
+
+            case 'heading':
+                $text = $rich('text');
+                $level = (int) ($b['level'] ?? 2);
+                return $text === '' ? null : [
+                    'type' => 'heading',
+                    'level' => in_array($level, [2, 3, 4], true) ? $level : 2,
+                    'text' => $text,
+                    'anchor' => slugify($s('anchor', 80)),
+                ];
+
+            case 'list':
+                $items = [];
+                foreach (array_slice((array) ($b['items'] ?? []), 0, 300) as $item) {
+                    $item = is_string($item) ? Sanitize::inline($item) : '';
+                    if ($item !== '') {
+                        $items[] = $item;
+                    }
+                }
+                return $items ? ['type' => 'list', 'style' => $pick('style', ['ul', 'ol'], 'ul'), 'items' => $items] : null;
+
+            case 'quote':
+                $text = $rich('text');
+                return $text === '' ? null : ['type' => 'quote', 'text' => $text, 'cite' => $s('cite', 200)];
+
+            case 'image':
+                $media = preg_replace('/[^a-z0-9]/', '', (string) ($b['media'] ?? '')) ?? '';
+                return $media === '' ? null : [
+                    'type' => 'image',
+                    'media' => $media,
+                    'alt' => $s('alt', 250),
+                    'caption' => $rich('caption'),
+                    'link' => Sanitize::url((string) ($b['link'] ?? '')),
+                    'size' => $pick('size', ['normal', 'wide', 'small'], 'normal'),
+                ];
+
+            case 'callout':
+                $text = $rich('text');
+                return $text === '' ? null : [
+                    'type' => 'callout',
+                    'variant' => $pick('variant', array_keys(self::CALLOUTS), 'info'),
+                    'title' => $s('title', 150),
+                    'text' => $text,
+                ];
+
+            case 'faq':
+                $items = [];
+                foreach (array_slice((array) ($b['items'] ?? []), 0, 50) as $item) {
+                    $q = Sanitize::text(is_array($item) ? ($item['q'] ?? '') : '', 300);
+                    $a = Sanitize::inline(is_array($item) && is_string($item['a'] ?? null) ? $item['a'] : '');
+                    if ($q !== '' && $a !== '') {
+                        $items[] = ['q' => $q, 'a' => $a];
+                    }
+                }
+                return $items ? ['type' => 'faq', 'title' => $s('title', 150), 'items' => $items] : null;
+
+            case 'table':
+                $rows = [];
+                foreach (array_slice((array) ($b['rows'] ?? []), 0, 200) as $row) {
+                    $cells = [];
+                    foreach (array_slice(is_array($row) ? $row : [], 0, 12) as $cell) {
+                        $cells[] = is_string($cell) ? Sanitize::inline($cell) : '';
+                    }
+                    if (array_filter($cells, fn ($c) => $c !== '')) {
+                        $rows[] = $cells;
+                    }
+                }
+                return $rows ? ['type' => 'table', 'head' => !empty($b['head']), 'caption' => $s('caption', 200), 'rows' => $rows] : null;
+
+            case 'button':
+                $text = $s('text', 80);
+                $url = Sanitize::url((string) ($b['url'] ?? ''));
+                return $text === '' || $url === '' ? null : [
+                    'type' => 'button',
+                    'text' => $text,
+                    'url' => $url,
+                    'style' => $pick('style', ['primary', 'secondary'], 'primary'),
+                    'align' => $pick('align', ['left', 'center'], 'left'),
+                ];
+
+            case 'video':
+                $url = Sanitize::url((string) ($b['url'] ?? ''));
+                return self::video($url) === null ? null : ['type' => 'video', 'url' => $url, 'caption' => $s('caption', 200)];
+
+            case 'code':
+                $code = Sanitize::code($b['code'] ?? '');
+                return trim($code) === '' ? null : [
+                    'type' => 'code',
+                    'code' => $code,
+                    'lang' => preg_replace('/[^a-z0-9+#\-]/', '', strtolower($s('lang', 20))) ?? '',
+                ];
+
+            case 'divider':
+                return ['type' => 'divider'];
+
+            case 'hero':
+                $title = $s('title', 200);
+                return $title === '' ? null : [
+                    'type' => 'hero',
+                    'title' => $title,
+                    'text' => $rich('text'),
+                    'button' => $s('button', 60),
+                    'url' => Sanitize::url((string) ($b['url'] ?? '')),
+                    'button2' => $s('button2', 60),
+                    'url2' => Sanitize::url((string) ($b['url2'] ?? '')),
+                    'media' => preg_replace('/[^a-z0-9]/', '', (string) ($b['media'] ?? '')) ?? '',
+                ];
+
+            case 'features':
+                $items = [];
+                foreach (array_slice((array) ($b['items'] ?? []), 0, 12) as $item) {
+                    if (!is_array($item)) {
+                        continue;
+                    }
+                    $title = Sanitize::text($item['title'] ?? '', 120);
+                    $text = Sanitize::inline(is_string($item['text'] ?? null) ? $item['text'] : '');
+                    if ($title !== '' || $text !== '') {
+                        $items[] = ['icon' => Sanitize::text($item['icon'] ?? '', 8), 'title' => $title, 'text' => $text];
+                    }
+                }
+                return $items ? ['type' => 'features', 'title' => $s('title', 200), 'items' => $items] : null;
+
+            case 'team':
+                $items = [];
+                foreach (array_slice((array) ($b['items'] ?? []), 0, 60) as $item) {
+                    $name = is_array($item) ? Sanitize::text($item['name'] ?? '', 120) : '';
+                    if ($name !== '') {
+                        $items[] = [
+                            'name' => $name,
+                            'role' => Sanitize::text($item['role'] ?? '', 120),
+                            'bio' => Sanitize::inline(is_string($item['bio'] ?? null) ? $item['bio'] : ''),
+                            'media' => preg_replace('/[^a-z0-9]/', '', (string) ($item['media'] ?? '')) ?? '',
+                            'link' => Sanitize::url((string) ($item['link'] ?? '')),
+                        ];
+                    }
+                }
+                return $items ? ['type' => 'team', 'title' => $s('title', 200), 'items' => $items] : null;
+
+            case 'posts':
+            case 'products':
+                return [
+                    'type' => $type,
+                    'title' => $s('title', 150),
+                    'count' => max(1, min(12, (int) ($b['count'] ?? ($type === 'posts' ? 3 : 4)))),
+                    'category' => preg_replace('/[^a-z0-9]/', '', (string) ($b['category'] ?? '')) ?? '',
+                ];
+
+            case 'contact':
+                return ['type' => 'contact', 'title' => $s('title', 150), 'button' => $s('button', 40)];
+        }
+        // Bloc d'une capacité active : champs déclarés, validés par le noyau. Sinon null (conservé par preserve()).
+        return in_array($type, self::TYPES, true) ? null : Extensions::normalizeBlock($b);
+    }
+
+    /**
+     * Mode Visuel : les blocs envoyés par l'éditeur, alignés un pour un sur les siens. Un bloc encore incomplet
+     * (paragraphe vide, image à choisir…) reste à sa place sous la forme d'un repère, pour être rempli sur place.
+     */
+    public static function edit(mixed $raw): array
+    {
+        $out = [];
+        foreach (is_array($raw) ? array_slice($raw, 0, 2000) : [] as $b) {
+            $b = is_array($b) ? $b : [];
+            $level = (int) ($b['level'] ?? 2);
+            $out[] = self::one($b) ?? ['type' => 'empty', 'of' => in_array($b['type'] ?? '', self::TYPES, true) ? $b['type'] : 'paragraph',
+                'level' => in_array($level, [2, 3, 4], true) ? $level : 2];
+        }
+        return $out;
+    }
+
+    /* ─────────────────────────────── Rendu HTML ────────────────────────────── */
+
+    /**
+     * @param array $ctx lang, h1 (le premier bandeau porte le H1), eager (première image prioritaire), page (id),
+     *                   edit (mode Visuel de l'administration : repères data-eb / data-ef, jamais dans le rendu public)
+     */
+    public static function html(array $blocks, array $ctx = []): string
+    {
+        $lang = (string) ($ctx['lang'] ?? Settings::get('lang'));
+        $anchors = self::anchors($blocks);
+        $eager = (bool) ($ctx['eager'] ?? false);
+        $h1 = (bool) ($ctx['h1'] ?? false);
+        $edit = self::$edit = !empty($ctx['edit']);
+        $out = '';
+        foreach ($blocks as $i => $b) {
+            $html = match ($b['type']) {
+                'paragraph' => '<p' . self::ef('text', true) . '>' . self::rich($b['text']) . "</p>\n",
+                'heading' => '<h' . $b['level'] . ' id="' . e($anchors[$i] ?? '') . '"' . self::ef('text', true) . '>' . self::rich($b['text']) . '</h' . $b['level'] . ">\n",
+                'list' => '<' . $b['style'] . '>' . implode('', array_map(fn ($li, $n) => '<li' . self::ef('items.' . $n, true) . '>' . self::rich($li) . '</li>', $b['items'], array_keys($b['items'])))
+                    . '</' . $b['style'] . ">\n",
+                'quote' => '<blockquote><p' . self::ef('text', true) . '>' . self::rich($b['text']) . '</p>'
+                    . ($b['cite'] !== '' ? '<p class="cite">— ' . e($b['cite']) . '</p>' : '') . "</blockquote>\n",
+                'image' => self::image($b, $eager && $i < 2),
+                'callout' => '<aside class="callout callout-' . $b['variant'] . '"><p class="callout-title"><span aria-hidden="true">'
+                    . self::CALLOUTS[$b['variant']] . '</span> ' . e($b['title'] !== '' ? $b['title'] : Theme::t('callout_' . $b['variant'], $lang))
+                    . '</p><p' . self::ef('text', true) . '>' . self::rich($b['text']) . "</p></aside>\n",
+                'faq' => self::faqHtml($b, $anchors[$i] ?? '', $lang),
+                'table' => self::table($b),
+                'button' => '<p class="btns' . ($b['align'] === 'center' ? ' center' : '') . '"><a class="btn btn-' . $b['style']
+                    . '" href="' . e(self::href($b['url'])) . '"' . self::ef('text') . '>' . e($b['text']) . "</a></p>\n",
+                'video' => self::videoHtml($b, $lang),
+                'code' => '<pre class="code"><code' . ($b['lang'] !== '' ? ' class="lang-' . e($b['lang']) . '"' : '') . self::ef('code') . '>'
+                    . e($b['code']) . "</code></pre>\n",
+                'divider' => "<hr>\n",
+                'hero' => self::hero($b, $h1 && $i === 0, $lang),
+                'features' => self::features($b, $anchors[$i] ?? ''),
+                'team' => self::team($b, $anchors[$i] ?? '', $lang),
+                'posts' => self::postsHtml($b, $anchors[$i] ?? '', $lang),
+                'products' => self::productsHtml($b, $anchors[$i] ?? '', $lang),
+                'contact' => self::contactHtml($b, (string) ($ctx['page'] ?? ''), $lang),
+                // Bloc d'une capacité : rendu par elle si elle est active ; bloc conservé (capacité absente) : rien.
+                default => Extensions::renderBlock($b, ['lang' => $lang, 'page' => (string) ($ctx['page'] ?? '')]),
+            };
+            $out .= $edit ? self::tag($html !== '' ? $html : self::placeholder($b), 'eb', (string) $i) : $html;
+            // HTML à insérer après ce bloc (blocs d'annonces, voir Ads::places) : toujours entre deux blocs.
+            $out .= !$edit && is_string($ctx['after'][$i] ?? null) ? $ctx['after'][$i] : '';
+        }
+        self::$edit = false;
+        return $out;
+    }
+
+    /**
+     * Mode Visuel : attribut « data-{k} » d'un élément modifiable sur place. Hors de l'aperçu d'édition de
+     * l'administration, renvoie toujours « '' » : le rendu public ne change pas d'un octet.
+     */
+    public static function ea(string $k, string $v = '', ?bool $on = null): string
+    {
+        return ($on ?? self::$edit) ? ' data-' . $k . ($v !== '' ? '="' . e($v) . '"' : '') : '';
+    }
+
+    /** Champ modifiable sur place : son chemin dans le bloc (« items.2.q »), et s'il accepte le texte enrichi. */
+    private static function ef(string $path, bool $rich = false): string
+    {
+        return self::ea('ef', $path) . ($rich ? self::ea('rich') : '');
+    }
+
+    /** Mode Visuel : ajoute l'attribut à la première balise d'un fragment (racine d'un bloc, photo). */
+    private static function tag(string $html, string $k, string $v): string
+    {
+        return self::$edit ? (string) preg_replace('/^<([a-z0-9]+)/', '<$1' . self::ea($k, $v), $html, 1) : $html;
+    }
+
+    /** Mode Visuel : repère d'un bloc incomplet ou invisible (boutique fermée, image à choisir…). */
+    private static function placeholder(array $b): string
+    {
+        $type = (string) ($b['of'] ?? $b['type']);
+        $level = (int) ($b['level'] ?? 2);
+        return match ($type) {
+            'paragraph' => '<p' . self::ef('text', true) . '></p>',
+            'heading' => '<h' . $level . self::ef('text', true) . '></h' . $level . '>',
+            default => '<div class="eb-empty" data-et="' . e($type) . '"' . ($type === 'image' ? self::ef('media') : '') . '></div>',
+        } . "\n";
+    }
+
+    /** Préfixe les liens internes (« /contact ») du dossier d'installation. */
+    public static function rich(string $html): string
+    {
+        $base = Req::base();
+        return $base === '' ? $html : (string) preg_replace('~ href="/(?!/)~', ' href="' . e($base) . '/', $html);
+    }
+
+    public static function href(string $url): string
+    {
+        return str_starts_with($url, '/') && !str_starts_with($url, '//') ? path_to($url) : $url;
+    }
+
+    private static function image(array $b, bool $eager): string
+    {
+        $media = Media::get($b['media']);
+        if (!$media) {
+            return '';
+        }
+        $alt = $b['alt'] !== '' ? $b['alt'] : (string) ($media['alt'] ?? '');
+        $sizes = $b['size'] === 'small' ? '(min-width: 30rem) 24rem, 100vw' : ($b['size'] === 'wide' ? '(min-width: 72rem) 68rem, 100vw' : '(min-width: 46rem) 42rem, 100vw');
+        $img = Media::picture($media, $alt, $sizes, $eager);
+        if ($b['link'] !== '') {
+            $img = '<a href="' . e(self::href($b['link'])) . '">' . $img . '</a>';
+        }
+        $img = self::tag($img, 'ef', 'media');
+        $caption = $b['caption'] !== '' ? '<figcaption' . self::ef('caption', true) . '>' . self::rich($b['caption']) . '</figcaption>' : '';
+        return '<figure class="img img-' . $b['size'] . '">' . $img . $caption . "</figure>\n";
+    }
+
+    private static function faqHtml(array $b, string $anchor, string $lang): string
+    {
+        $title = $b['title'] !== '' ? $b['title'] : Theme::t('faq', $lang);
+        $out = '<section class="faq"><h2 id="' . e($anchor) . '"' . self::ef('title') . '>' . e($title) . '</h2>';
+        foreach ($b['items'] as $n => $item) {
+            $out .= '<details><summary' . self::ef('items.' . $n . '.q') . '>' . e($item['q']) . '</summary><div><p' . self::ef('items.' . $n . '.a', true) . '>'
+                . self::rich($item['a']) . '</p></div></details>';
+        }
+        return $out . "</section>\n";
+    }
+
+    private static function table(array $b): string
+    {
+        $rows = $b['rows'];
+        $cols = max(array_map('count', $rows));
+        $cell = static function (array $row, string $tag, int $r) use ($cols): string {
+            $html = '';
+            for ($c = 0; $c < $cols; $c++) {
+                $html .= "<$tag" . self::ef('rows.' . $r . '.' . $c, true) . '>' . self::rich($row[$c] ?? '') . "</$tag>";
+            }
+            return '<tr>' . $html . '</tr>';
+        };
+        $out = '<div class="table"><table>' . ($b['caption'] !== '' ? '<caption' . self::ef('caption') . '>' . e($b['caption']) . '</caption>' : '');
+        if ($b['head']) {
+            $out .= '<thead>' . $cell(array_shift($rows), 'th', 0) . '</thead>';
+        }
+        $out .= '<tbody>' . implode('', array_map(fn ($r, $n) => $cell($r, 'td', $n + ($b['head'] ? 1 : 0)), $rows, array_keys($rows))) . '</tbody>';
+        return $out . "</table></div>\n";
+    }
+
+    private static function videoHtml(array $b, string $lang): string
+    {
+        $v = self::video($b['url']);
+        if (!$v) {
+            return '';
+        }
+        $label = $b['caption'] !== '' ? $b['caption'] : Theme::t('video', $lang);
+        return '<figure class="video"><a class="video-lite" href="' . e($v['watch']) . '" data-embed="' . e($v['embed'])
+            . '" target="_blank" rel="noopener"><span class="video-play" aria-hidden="true"></span><span class="video-label">'
+            . e(Theme::t('play_video', $lang)) . ' · ' . e($label) . '</span></a>'
+            . ($b['caption'] !== '' ? '<figcaption' . self::ef('caption') . '>' . e($b['caption']) . '</figcaption>' : '') . "</figure>\n";
+    }
+
+    private static function hero(array $b, bool $isH1, string $lang): string
+    {
+        $tag = $isH1 ? 'h1' : 'h2';
+        $buttons = '';
+        if ($b['button'] !== '' && $b['url'] !== '') {
+            $buttons .= '<a class="btn btn-primary btn-lg" href="' . e(self::href($b['url'])) . '"' . self::ef('button') . '>' . e($b['button']) . '</a>';
+        }
+        if ($b['button2'] !== '' && $b['url2'] !== '') {
+            $buttons .= '<a class="btn btn-secondary btn-lg" href="' . e(self::href($b['url2'])) . '"' . self::ef('button2') . '>' . e($b['button2']) . '</a>';
+        }
+        $media = $b['media'] !== '' ? Media::get($b['media']) : null;
+        return '<section class="hero' . ($media ? ' hero-media' : '') . '"><div class="hero-text">'
+            . "<$tag class=\"hero-title\"" . self::ef('title') . '>' . e($b['title']) . "</$tag>"
+            . ($b['text'] !== '' ? '<p class="hero-lead"' . self::ef('text', true) . '>' . self::rich($b['text']) . '</p>' : '')
+            . ($buttons !== '' ? '<p class="btns">' . $buttons . '</p>' : '') . '</div>'
+            . ($media ? '<div class="hero-img"' . self::ef('media') . '>' . Media::picture($media, (string) $media['alt'], self::heroSizes(), true) . '</div>' : '')
+            . "</section>\n";
+    }
+
+    /** Largeur affichée de l'image du bandeau, selon sa composition (pleine largeur dans certaines directions). */
+    private static function heroSizes(): string
+    {
+        return match (Theme::direction()['hero'] ?? 'split') {
+            'poster', 'fullbleed', 'centered' => '(min-width: 72rem) 68rem, 100vw',
+            'editorial' => '(min-width: 60rem) 28rem, 100vw',
+            default => '(min-width: 60rem) 34rem, 100vw',
+        };
+    }
+
+    private static function features(array $b, string $anchor): string
+    {
+        $out = '<section class="features">' . ($b['title'] !== '' ? '<h2 id="' . e($anchor) . '"' . self::ef('title') . '>' . e($b['title']) . '</h2>' : '') . '<div class="grid">';
+        // Direction artistique : icônes dessinées à la place des émojis, ou aucune icône.
+        $d = Theme::direction();
+        $icons = ($d['features'] ?? '') === 'numbers' ? 'none' : ($d['icons'] ?? 'emoji');
+        foreach ($b['items'] as $n => $item) {
+            $icon = $icons === 'emoji' || $item['icon'] === '' ? '' : ($icons === 'line' ? Design::icon($item['icon']) : '');
+            $out .= '<div class="feature">' . ($icons !== 'emoji' ? ($icon !== '' ? '<span class="feature-icon" aria-hidden="true">' . $icon . '</span>' : '')
+                : ($item['icon'] !== '' ? '<span class="feature-icon" aria-hidden="true"' . self::ef('items.' . $n . '.icon') . '>' . e($item['icon']) . '</span>' : ''))
+                . ($item['title'] !== '' ? '<h3' . self::ef('items.' . $n . '.title') . '>' . e($item['title']) . '</h3>' : '')
+                . ($item['text'] !== '' ? '<p' . self::ef('items.' . $n . '.text', true) . '>' . self::rich($item['text']) . '</p>' : '') . '</div>';
+        }
+        return $out . "</div></section>\n";
+    }
+
+    /** Équipe : portraits ronds (ou initiales), nom, fonction, présentation et lien de profil. */
+    private static function team(array $b, string $anchor, string $lang): string
+    {
+        $out = '<section class="team"><h2 id="' . e($anchor) . '"' . self::ef('title') . '>' . e($b['title'] !== '' ? $b['title'] : Theme::t('team', $lang)) . '</h2><div class="grid">';
+        foreach ($b['items'] as $n => $p) {
+            $m = $p['media'] !== '' ? Media::get($p['media']) : null;
+            $initials = mb_strtoupper(implode('', array_map(fn ($w) => mb_substr($w, 0, 1), array_slice(preg_split('/\s+/u', $p['name']) ?: [], 0, 2))));
+            $out .= '<div class="feature member">'
+                . self::tag($m ? Media::picture($m, (string) ($m['alt'] !== '' ? $m['alt'] : $p['name']), '8rem') : '<span class="member-initials" aria-hidden="true">' . e($initials) . '</span>', 'ef', 'items.' . $n . '.media')
+                . '<h3' . self::ef('items.' . $n . '.name') . '>' . e($p['name']) . '</h3>'
+                . ($p['role'] !== '' ? '<p class="member-role"' . self::ef('items.' . $n . '.role') . '>' . e($p['role']) . '</p>' : '')
+                . ($p['bio'] !== '' ? '<p' . self::ef('items.' . $n . '.bio', true) . '>' . self::rich($p['bio']) . '</p>' : '')
+                . ($p['link'] !== '' ? '<p class="member-link"><a href="' . e(self::href($p['link'])) . '">'
+                    . e((string) preg_replace('/^www\./', '', (string) (parse_url($p['link'], PHP_URL_HOST) ?: $p['link']))) . ' ↗</a></p>' : '')
+                . '</div>';
+        }
+        return $out . "</div></section>\n";
+    }
+
+    private static function postsHtml(array $b, string $anchor, string $lang): string
+    {
+        if (!Settings::get('blog.enabled')) {
+            return '';
+        }
+        $posts = Content::latest($b['count'], $b['category']);
+        if (!$posts) {
+            return '';
+        }
+        $title = $b['title'] !== '' ? $b['title'] : Theme::t('latest_posts', $lang);
+        return '<section class="posts-block"><h2' . ($anchor !== '' ? ' id="' . e($anchor) . '"' : '') . self::ef('title') . '>' . e($title) . '</h2>'
+            . Theme::cards($posts, $lang)
+            . '<p class="more"><a href="' . e(path_to(Content::blogPath())) . '">' . e(Theme::t('all_posts', $lang)) . " →</a></p></section>\n";
+    }
+
+    /** Derniers produits de la boutique (tous, ou ceux d'une catégorie). */
+    public static function products(array $b): array
+    {
+        if (!Shop::enabled()) {
+            return [];
+        }
+        $list = array_filter(Content::published('product'), fn ($p) => $b['category'] === '' || $p['category'] === $b['category']);
+        return array_slice(array_values($list), 0, $b['count']);
+    }
+
+    private static function productsHtml(array $b, string $anchor, string $lang): string
+    {
+        $products = self::products($b);
+        if (!$products) {
+            return '';
+        }
+        $title = $b['title'] !== '' ? $b['title'] : Theme::t('products', $lang);
+        return '<section class="posts-block products-block"><h2' . ($anchor !== '' ? ' id="' . e($anchor) . '"' : '') . self::ef('title') . '>' . e($title) . '</h2>'
+            . Theme::products($products, $lang)
+            . '<p class="more"><a href="' . e(path_to(Shop::path())) . '">' . e(Theme::t('all_products', $lang)) . " →</a></p></section>\n";
+    }
+
+    private static function contactHtml(array $b, string $page, string $lang): string
+    {
+        $t = static fn (string $k): string => e(Theme::t($k, $lang));
+        $title = $b['title'] !== '' ? '<h2' . self::ef('title') . '>' . e($b['title']) . '</h2>' : '';
+        $privacy = Content::findBySlugAny(['politique-de-confidentialite', 'confidentialite', 'politica-de-privacidad', 'privacy-policy', 'privacy']);
+        $notice = $t('form_notice') . ($privacy ? ' <a href="' . e(path_to(Content::path($privacy))) . '">' . $t('privacy') . '</a>.' : '');
+        return '<section class="contact-block">' . $title
+            . '<form class="contact" method="post" action="' . e(path_to('/_heaven/contact')) . '" data-k="' . e(Contact::token())
+            . '" data-sending="' . $t('form_sending') . '" data-error="' . $t('form_error') . '">'
+            . '<input type="hidden" name="page" value="' . e($page) . '"><input type="hidden" name="k" value="">'
+            . '<div class="hp" aria-hidden="true"><label>Website <input name="website" tabindex="-1" autocomplete="off"></label></div>'
+            . '<p><label for="cf-name">' . $t('form_name') . '</label><input id="cf-name" name="name" required maxlength="100" autocomplete="name"></p>'
+            . '<p><label for="cf-email">' . $t('form_email') . '</label><input id="cf-email" type="email" name="email" required maxlength="190" autocomplete="email"></p>'
+            . '<p><label for="cf-msg">' . $t('form_message') . '</label><textarea id="cf-msg" name="message" required rows="6" maxlength="5000"></textarea></p>'
+            . '<p class="form-foot"><button class="btn btn-primary" type="submit">' . e($b['button'] !== '' ? $b['button'] : Theme::t('form_send', $lang)) . '</button>'
+            . '<span class="form-status" role="status" aria-live="polite"></span></p>'
+            . '<p class="form-notice">' . $notice . '</p></form></section>' . "\n";
+    }
+
+    /* ───────────────────────────── Extraction ───────────────────────────── */
+
+    /** Identifiants uniques et stables des titres (ancres du sommaire). */
+    public static function anchors(array $blocks): array
+    {
+        $used = array_fill_keys(self::RESERVED_IDS, true);
+        $out = [];
+        foreach ($blocks as $i => $b) {
+            $text = match ($b['type']) {
+                'heading' => $b['anchor'] !== '' ? $b['anchor'] : plain($b['text']),
+                'faq' => $b['title'] !== '' ? $b['title'] : 'faq',
+                'features', 'posts', 'products' => $b['title'] ?? '',
+                'team' => $b['title'] !== '' ? $b['title'] : 'team',
+                default => null,
+            };
+            if ($text === null || $text === '') {
+                continue;
+            }
+            $id = slugify($text, 'fr', 60) ?: 'section';
+            $candidate = $id;
+            for ($n = 2; isset($used[$candidate]); $n++) {
+                $candidate = $id . '-' . $n;
+            }
+            $used[$candidate] = true;
+            $out[$i] = $candidate;
+        }
+        return $out;
+    }
+
+    /** Sommaire : titres H2/H3 (+ FAQ). */
+    public static function toc(array $blocks, string $lang = 'fr'): array
+    {
+        $anchors = self::anchors($blocks);
+        $out = [];
+        foreach ($blocks as $i => $b) {
+            if ($b['type'] === 'heading' && $b['level'] <= 3) {
+                if (isset($anchors[$i])) { // un titre vide (espaceur d'un ancien constructeur) n'a pas d'ancre : absent du sommaire
+                    $out[] = ['level' => $b['level'], 'text' => plain($b['text']), 'id' => $anchors[$i]];
+                }
+            } elseif ($b['type'] === 'faq') {
+                $out[] = ['level' => 2, 'text' => $b['title'] !== '' ? $b['title'] : Theme::t('faq', $lang), 'id' => $anchors[$i] ?? 'faq'];
+            }
+        }
+        return $out;
+    }
+
+    /** Questions/réponses de tous les blocs FAQ (schéma FAQPage). */
+    public static function faq(array $blocks): array
+    {
+        $out = [];
+        foreach ($blocks as $b) {
+            if ($b['type'] === 'faq') {
+                foreach ($b['items'] as $item) {
+                    $out[] = ['q' => $item['q'], 'a' => plain($item['a'])];
+                }
+            }
+        }
+        return $out;
+    }
+
+    /** Texte brut du contenu (analyse, recherche, nombre de mots). */
+    public static function text(array $blocks): string
+    {
+        $parts = [];
+        foreach ($blocks as $b) {
+            $parts[] = match ($b['type']) {
+                'paragraph', 'heading', 'quote' => plain($b['text']),
+                'callout' => $b['title'] . ' ' . plain($b['text']),
+                'list' => implode(' ', array_map('plain', $b['items'])),
+                'faq' => implode(' ', array_map(fn ($i) => $i['q'] . ' ' . plain($i['a']), $b['items'])),
+                'table' => implode(' ', array_map(fn ($r) => implode(' ', array_map('plain', $r)), $b['rows'])),
+                'hero' => $b['title'] . ' ' . plain($b['text']),
+                'features' => $b['title'] . ' ' . implode(' ', array_map(fn ($i) => $i['title'] . ' ' . plain($i['text']), $b['items'])),
+                'team' => $b['title'] . ' ' . implode(' ', array_map(fn ($p) => $p['name'] . ' ' . $p['role'] . ' ' . plain($p['bio']), $b['items'])),
+                'image' => plain($b['caption']),
+                default => '',
+            };
+        }
+        return trim((string) preg_replace('/\s+/u', ' ', implode(' ', $parts)));
+    }
+
+    /** Premier paragraphe (introduction). */
+    public static function intro(array $blocks): string
+    {
+        foreach ($blocks as $b) {
+            if ($b['type'] === 'paragraph') {
+                return plain($b['text']);
+            }
+            if ($b['type'] === 'hero' && $b['text'] !== '') {
+                return plain($b['text']);
+            }
+        }
+        return '';
+    }
+
+    /** Identifiants des médias utilisés. */
+    public static function media(array $blocks): array
+    {
+        $ids = [];
+        foreach ($blocks as $b) {
+            if (in_array($b['type'], ['image', 'hero'], true) && ($b['media'] ?? '') !== '') {
+                $ids[] = $b['media'];
+            }
+            if ($b['type'] === 'team') {
+                $ids = array_merge($ids, array_filter(array_column($b['items'], 'media')));
+            }
+        }
+        return array_values(array_unique($ids));
+    }
+
+    /** Toutes les URL de liens (contenu enrichi + boutons). */
+    public static function links(array $blocks): array
+    {
+        $html = '';
+        $urls = [];
+        array_walk_recursive($blocks, function ($value, $key) use (&$html, &$urls): void {
+            if (is_string($value)) {
+                if (in_array($key, ['url', 'url2', 'link'], true) && $value !== '') {
+                    $urls[] = $value;
+                } else {
+                    $html .= $value . ' ';
+                }
+            }
+        });
+        preg_match_all('~<a href="([^"]+)"~', $html, $m);
+        foreach ($m[1] as $href) {
+            $urls[] = html_entity_decode($href, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        }
+        return $urls;
+    }
+
+    /** Lien vidéo YouTube / Vimeo → URLs de lecture et d'intégration respectueuses de la vie privée. */
+    public static function video(string $url): ?array
+    {
+        if (preg_match('~^https?://(?:www\.|m\.)?(?:youtube\.com/(?:watch\?(?:.*&)?v=|embed/|shorts/|live/)|youtu\.be/)([A-Za-z0-9_-]{11})~', $url, $m)) {
+            return [
+                'provider' => 'youtube',
+                'watch' => 'https://www.youtube.com/watch?v=' . $m[1],
+                'embed' => 'https://www.youtube-nocookie.com/embed/' . $m[1] . '?autoplay=1&rel=0',
+            ];
+        }
+        if (preg_match('~^https?://(?:www\.)?(?:vimeo\.com/|player\.vimeo\.com/video/)(\d{5,12})~', $url, $m)) {
+            return [
+                'provider' => 'vimeo',
+                'watch' => 'https://vimeo.com/' . $m[1],
+                'embed' => 'https://player.vimeo.com/video/' . $m[1] . '?autoplay=1&dnt=1',
+            ];
+        }
+        return null;
+    }
+
+    /* ─────────────────────────────── Markdown ─────────────────────────────── */
+
+    public static function markdown(array $blocks, string $lang = 'fr'): string
+    {
+        $out = [];
+        foreach ($blocks as $b) {
+            $out[] = match ($b['type']) {
+                'paragraph' => self::md($b['text']),
+                'heading' => str_repeat('#', $b['level']) . ' ' . self::md($b['text']),
+                'list' => implode("\n", array_map(
+                    fn ($li, $n) => ($b['style'] === 'ol' ? ($n + 1) . '. ' : '- ') . self::md($li),
+                    $b['items'],
+                    array_keys($b['items'])
+                )),
+                'quote' => '> ' . str_replace("\n", "\n> ", self::md($b['text'])) . ($b['cite'] !== '' ? "\n>\n> — " . self::mdText($b['cite']) : ''),
+                'image' => self::mdImage($b),
+                'callout' => '> **' . self::mdText($b['title'] !== '' ? $b['title'] : Theme::t('callout_' . $b['variant'], $lang)) . '** — '
+                    . str_replace("\n", "\n> ", self::md($b['text'])),
+                'faq' => '## ' . self::mdText($b['title'] !== '' ? $b['title'] : Theme::t('faq', $lang)) . "\n\n"
+                    . implode("\n\n", array_map(fn ($i) => '### ' . self::mdText($i['q']) . "\n\n" . self::md($i['a']), $b['items'])),
+                'table' => self::mdTable($b),
+                'button' => self::mdLink($b['text'], $b['url']),
+                'video' => ($v = self::video($b['url'])) ? self::mdLink('▶ ' . ($b['caption'] !== '' ? $b['caption'] : Theme::t('video', $lang)), $v['watch']) : '',
+                'code' => ($f = self::fence($b['code'])) . $b['lang'] . "\n" . rtrim($b['code']) . "\n" . $f,
+                'divider' => '---',
+                'hero' => '## ' . self::mdText($b['title']) . ($b['text'] !== '' ? "\n\n" . self::md($b['text']) : '')
+                    . ($b['button'] !== '' && $b['url'] !== '' ? "\n\n" . self::mdLink($b['button'], $b['url']) : ''),
+                'features' => ($b['title'] !== '' ? '## ' . self::mdText($b['title']) . "\n\n" : '')
+                    . implode("\n\n", array_map(fn ($i) => '### ' . self::mdText(trim($i['icon'] . ' ' . $i['title'])) . ($i['text'] !== '' ? "\n\n" . self::md($i['text']) : ''), $b['items'])),
+                'team' => '## ' . self::mdText($b['title'] !== '' ? $b['title'] : Theme::t('team', $lang)) . "\n\n"
+                    . implode("\n\n", array_map(fn ($p) => '### ' . self::mdText($p['name']) . ($p['role'] !== '' ? ' — ' . self::mdText($p['role']) : '')
+                        . ($p['bio'] !== '' ? "\n\n" . self::md($p['bio']) : '') . ($p['link'] !== '' ? "\n\n" . self::mdLink($p['link'], $p['link']) : ''), $b['items'])),
+                'posts' => self::mdPosts($b, $lang),
+                'products' => self::mdProducts($b, $lang),
+                default => '',
+            };
+        }
+        return trim(implode("\n\n", array_filter($out, fn ($s) => $s !== ''))) . "\n";
+    }
+
+    /**
+     * HTML en ligne (déjà assaini) → Markdown des exports publics (.md, llms.txt, llms-full.txt). Les balises connues
+     * deviennent la syntaxe Markdown ; chaque texte n'est décodé qu'une fois puis échappé (mdText) ; le code en ligne
+     * garde son texte entre plus d'accents graves qu'il n'en contient ; l'adresse des liens est revalidée. Rien n'est
+     * redécouvert par une expression régulière : un lecteur Markdown n'y verra jamais de balise active ni de lien non vérifié.
+     */
+    public static function md(string $html): string
+    {
+        $out = '';
+        $code = null;
+        $links = [];
+        foreach (preg_split('~(<[^>]*>)~', $html, -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY) ?: [] as $part) {
+            if ($part[0] !== '<') {
+                $text = html_entity_decode($part, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+                if ($code !== null) {
+                    $code .= $text;
+                } else {
+                    $out .= self::mdText($text);
+                }
+                continue;
+            }
+            $close = str_starts_with($part, '</');
+            $tag = strtolower((string) preg_replace('~^</?([a-zA-Z0-9]*).*$~s', '$1', $part));
+            if ($tag === 'code') {
+                if (!$close && $code === null) {
+                    $code = '';
+                } elseif ($close && $code !== null) {
+                    $out .= self::mdCode($code);
+                    $code = null;
+                }
+                continue;
+            }
+            if ($code !== null) {
+                // Dans le code en ligne, les autres balises disparaissent et un retour à la ligne devient une espace.
+                $code .= $tag === 'br' ? ' ' : '';
+                continue;
+            }
+            if ($tag === 'a' && !$close) {
+                $url = preg_match('~\shref="([^"]*)"~', $part, $m) ? Sanitize::url(html_entity_decode($m[1], ENT_QUOTES | ENT_HTML5, 'UTF-8')) : '';
+                $links[] = $url === '' ? null : self::mdUrl($url);
+                if ($url !== '') {
+                    // « ![ » ouvrirait une image : un point d'exclamation juste avant le lien reste du texte.
+                    $out = (str_ends_with($out, '!') ? substr($out, 0, -1) . '\\!' : $out) . '[';
+                }
+                continue;
+            }
+            $out .= match ($tag) {
+                'a' => ($url = array_pop($links)) !== null ? '](' . $url . ')' : '',
+                'strong' => '**',
+                'em' => '*',
+                's' => '~~',
+                'br' => "  \n",
+                default => '',
+            };
+        }
+        if ($code !== null) {
+            $out .= self::mdCode($code);
+        }
+        while ($links) {
+            $url = array_pop($links);
+            $out .= $url !== null ? '](' . $url . ')' : '';
+        }
+        return trim($out);
+    }
+
+    /**
+     * Texte brut inséré dans du Markdown : il reste du texte pour tout lecteur. « < » devient « &lt; » (ni HTML ni lien
+     * automatique) ; une barre oblique inverse neutralise les crochets (lien, image, définition de référence), l'accent
+     * grave et le tilde (code), l'accolade (attributs, HTML brut de certains lecteurs) et la barre oblique inverse elle-même.
+     * Le reste de la ponctuation est laissé tel quel, pour que l'export reste agréable à lire.
+     */
+    public static function mdText(string $text): string
+    {
+        return strtr($text, ['\\' => '\\\\', '`' => '\\`', '[' => '\\[', ']' => '\\]', '{' => '\\{', '~' => '\\~', '<' => '&lt;']);
+    }
+
+    /**
+     * Valeur de l'en-tête de métadonnées d'un export Markdown : une chaîne JSON (lue aussi comme du YAML), sans balise,
+     * crochet ni accolade bruts. Un lecteur qui ignore cet en-tête l'affiche comme du texte : rien n'y devient un lien.
+     */
+    public static function mdMeta(string $value): string
+    {
+        return str_replace(['[', ']', '{'], ['\u005b', '\u005d', '\u007b'], (string) json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG));
+    }
+
+    /** Clôture d'un bloc de code : plus d'accents graves que la plus longue suite du code, trois au moins. */
+    public static function fence(string $code): string
+    {
+        preg_match_all('~`+~', $code, $runs);
+        return str_repeat('`', max(3, max(array_map('strlen', $runs[0]) ?: [0]) + 1));
+    }
+
+    /** Code en ligne : sur une seule ligne, entre plus d'accents graves qu'il n'en contient (espacé s'il en commence ou finit par un). */
+    private static function mdCode(string $code): string
+    {
+        $code = str_replace(["\r\n", "\r", "\n"], ' ', $code);
+        if ($code === '') {
+            return '';
+        }
+        preg_match_all('~`+~', $code, $runs);
+        $tick = str_repeat('`', max(array_map('strlen', $runs[0]) ?: [0]) + 1);
+        $pad = trim($code, ' ') !== '' && preg_match('~^[ `]|[ `]$~', $code) ? ' ' : '';
+        return $tick . $pad . $code . $pad . $tick;
+    }
+
+    /** Lien Markdown à partir d'un texte brut et d'une adresse (revalidée). */
+    private static function mdLink(string $text, string $url): string
+    {
+        $url = Sanitize::url($url);
+        $text = self::mdText(str_replace(['[', ']'], '', $text));
+        return $url === '' ? $text : '[' . $text . '](' . self::mdUrl($url) . ')';
+    }
+
+    /** Adresse d'un lien Markdown : absolue, sans espace, parenthèse, chevron ni barre oblique inverse (qui échapperait la suite). */
+    private static function mdUrl(string $url): string
+    {
+        return str_replace(['\\', ' ', '(', ')', '<', '>'], ['%5C', '%20', '%28', '%29', '%3C', '%3E'], self::abs($url));
+    }
+
+    private static function abs(string $url): string
+    {
+        return str_starts_with($url, '/') && !str_starts_with($url, '//') ? absolute_url($url) : $url;
+    }
+
+    private static function mdImage(array $b): string
+    {
+        $media = Media::get($b['media']);
+        if (!$media) {
+            return '';
+        }
+        $alt = $b['alt'] !== '' ? $b['alt'] : (string) $media['alt'];
+        return '![' . self::mdText(str_replace(['[', ']'], '', $alt)) . '](' . self::mdUrl(absolute_url(Media::url($media))) . ')'
+            . ($b['caption'] !== '' ? "\n*" . self::md($b['caption']) . '*' : '');
+    }
+
+    private static function mdTable(array $b): string
+    {
+        $rows = $b['rows'];
+        $cols = max(array_map('count', $rows));
+        $line = static function (array $row) use ($cols): string {
+            $cells = [];
+            for ($c = 0; $c < $cols; $c++) {
+                $cells[] = str_replace('|', '\|', self::md($row[$c] ?? ''));
+            }
+            return '| ' . implode(' | ', $cells) . ' |';
+        };
+        $head = $b['head'] ? array_shift($rows) : array_fill(0, $cols, '');
+        $out = [$line($head), '|' . str_repeat(' --- |', $cols)];
+        foreach ($rows as $row) {
+            $out[] = $line($row);
+        }
+        return ($b['caption'] !== '' ? '**' . self::mdText($b['caption']) . "**\n\n" : '') . implode("\n", $out);
+    }
+
+    private static function mdPosts(array $b, string $lang): string
+    {
+        $posts = Settings::get('blog.enabled') ? Content::latest($b['count'], $b['category']) : [];
+        if (!$posts) {
+            return '';
+        }
+        $lines = array_map(fn ($p) => '- ' . self::mdLink($p['title'], absolute_url(Content::path($p))), $posts);
+        return '## ' . self::mdText($b['title'] !== '' ? $b['title'] : Theme::t('latest_posts', $lang)) . "\n\n" . implode("\n", $lines);
+    }
+
+    private static function mdProducts(array $b, string $lang): string
+    {
+        $products = self::products($b);
+        if (!$products) {
+            return '';
+        }
+        $lines = array_map(fn ($p) => '- ' . self::mdLink($p['title'], absolute_url(Content::path($p))) . ' — ' . Shop::summary($p, $lang), $products);
+        return '## ' . self::mdText($b['title'] !== '' ? $b['title'] : Theme::t('products', $lang)) . "\n\n" . implode("\n", $lines);
+    }
+}

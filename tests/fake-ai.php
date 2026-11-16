@@ -1,0 +1,453 @@
+<?php
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 Thierry Gustin
+/**
+ * Faux fournisseurs d'IA pour les tests (serveur intégré de PHP) : Messages API d'Anthropic,
+ * Responses API d'OpenAI, images OpenAI, FLUX (Black Forest Labs) et Ideogram.
+ * Chaque requête est vérifiée (en-têtes, forme du corps, renvoi fidèle des blocs du tour précédent)
+ * puis journalisée dans $FAKE_AI_DIR/log.jsonl ; une requête mal formée reçoit une erreur 400 explicite.
+ *
+ *   FAKE_AI_DIR=/tmp/x php -S 127.0.0.1:9999 tests/fake-ai.php
+ *
+ * Scénarios (mot-clé dans le dernier message de la personne) : ARTICLE (image puis brouillon), EQUIPE (recherche
+ * puis ajout d'un membre), MODIFIE <id> (retouche d'un brouillon), EDITEUR (modification du contenu ouvert),
+ * DOUBLE <id> (deux modifications de suite), PIEGE (texte malveillant), REFUS (refus de sécurité) ; sinon une simple réponse texte.
+ * Images (mot-clé dans la description) : MODERE (image refusée par le filtre du fournisseur après l'envoi), PERDUE (Ideogram :
+ * image créée mais introuvable au téléchargement).
+ */
+declare(strict_types=1);
+
+$dir = (string) getenv('FAKE_AI_DIR') ?: sys_get_temp_dir();
+$path = (string) parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+$method = $_SERVER['REQUEST_METHOD'];
+$raw = (string) file_get_contents('php://input');
+$body = json_decode($raw, true) ?: [];
+$header = static fn (string $name): string => (string) ($_SERVER['HTTP_' . strtoupper(str_replace('-', '_', $name))] ?? '');
+$base = 'http://' . $_SERVER['HTTP_HOST'];
+file_put_contents($dir . '/log.jsonl', json_encode(['m' => $method, 'p' => $path, 'b' => $body ?: $_POST, 'h' => [
+    'key' => $header('x-api-key') ?: $header('authorization') ?: $header('x-key') ?: $header('api-key'),
+    'version' => $header('anthropic-version'), 'beta' => $header('anthropic-beta'),
+]], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n", FILE_APPEND);
+
+function fail(string $message, int $status = 400): never
+{
+    http_response_code($status);
+    header('Content-Type: application/json');
+    echo json_encode(['type' => 'error', 'error' => ['type' => 'invalid_request_error', 'message' => $message]]);
+    exit;
+}
+
+function sse(array $events): never
+{
+    header('Content-Type: text/event-stream');
+    header('Cache-Control: no-cache');
+    foreach ($events as $e) {
+        echo 'event: ' . $e['type'] . "\n" . 'data: ' . json_encode($e, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n\n";
+        flush();
+    }
+    exit;
+}
+
+/** Image de test (JPEG ou PNG) aux dimensions demandées. */
+function picture(int $w, int $h, string $type = 'png'): string
+{
+    $img = imagecreatetruecolor($w, $h);
+    imagefill($img, 0, 0, (int) imagecolorallocate($img, 91, 76, 240));
+    imagefilledellipse($img, intdiv($w, 2), intdiv($h, 2), intdiv($w, 2), intdiv($h, 2), (int) imagecolorallocate($img, 255, 201, 40));
+    ob_start();
+    $type === 'jpeg' ? imagejpeg($img, null, 80) : imagepng($img);
+    return (string) ob_get_clean();
+}
+
+/** Valeur d'exemple conforme à un schéma JSON (sorties structurées). */
+function sample(array $schema, string $key = 'value', string $input = ''): mixed
+{
+    return match ($schema['type'] ?? 'string') {
+        'object' => (object) array_combine(array_keys($schema['properties']), array_map(fn ($k) => sample($schema['properties'][$k], (string) $k, $input), array_keys($schema['properties']))),
+        'array' => [sample($schema['items'], $key . ' 1', $input), sample($schema['items'], $key . ' 2', $input)],
+        'integer', 'number' => 1,
+        'boolean' => true,
+        default => match ($key) {
+            'html' => '<strong>Réécrit</strong> : ' . strip_tags($input) . ' <script>alert(1)</script>',
+            'alt' => 'Atelier lumineux avec des bols en céramique',
+            'prompt' => 'A bright ceramic studio with handmade bowls on a wooden table, soft morning light, warm tones, natural editorial photograph, no text.',
+            'answer' => 'Une réponse claire et utile, en **deux** phrases. Voir [le contact](/contact).',
+            default => 'Exemple ' . $key,
+        },
+    };
+}
+
+/**
+ * « Imagine ma direction » : quatre propositions avec leurs pièges (texte trop pâle, couleur invalide, police inconnue,
+ * balise dans le nom). Heaven doit garder trois directions lisibles et jeter celle dont une couleur est invalide.
+ */
+function designed(): array
+{
+    $d = static fn (array $x): array => $x + ['name' => 'Atelier', 'idea' => 'Une idée.', 'ground' => '#f6f1e7', 'surface' => '#ebe2d2', 'ink' => '#2a1d14', 'muted' => '#5d4b3c',
+        'accent' => '#1f5f8b', 'display' => 'young-serif', 'text' => 'humanist', 'case' => 'normal', 'scale' => 'regular', 'radius' => 'soft', 'density' => 'regular',
+        'surfaces' => 'line', 'hero' => 'split', 'features' => 'cards', 'sections' => 'plain', 'icons' => 'line'];
+    return ['directions' => [
+        $d(['name' => 'Four à bois', 'idea' => 'Le fournil à l’aube : farine, braise et bleu d’émail.', 'hero' => 'editorial', 'features' => 'rows', 'sections' => 'bands']),
+        $d(['name' => '<b>Nuit</b> de cuisson', 'idea' => 'La cuisson de nuit.', 'ground' => '#14110f', 'surface' => '#1f1a17', 'ink' => '#2b2622', 'muted' => '#3a332d',
+            'accent' => '#ff8a3d', 'display' => 'police-inconnue', 'case' => 'upper', 'hero' => 'fullbleed']),
+        $d(['name' => 'Rouge', 'ground' => 'red']),
+        $d(['name' => 'Marché', 'idea' => 'Le marché du samedi : ardoise, craie et tomates.', 'ground' => '#f3f4ef', 'surface' => '#e3e6dc', 'ink' => '#1c211c',
+            'accent' => '#c8321e', 'display' => 'archivo-black', 'hero' => 'poster', 'features' => 'columns']),
+    ]];
+}
+
+/**
+ * « Crée ta page avec l'IA » : une composition réaliste, avec ses pièges (image inconnue, lien javascript:,
+ * HTML, type de section inconnu) et deux repères « [À compléter : …] ». La photo du bandeau est la première
+ * image de la liste reçue, s'il y en a une.
+ */
+function composed(string $input): array
+{
+    $s = static fn (array $x): array => $x + ['type' => '', 'title' => '', 'text' => '', 'style' => '', 'items' => [], 'button' => '', 'url' => '', 'button2' => '', 'url2' => '', 'media' => ''];
+    $i = static fn (string $title, string $text = '', string $icon = '', string $role = ''): array => compact('title', 'text', 'icon', 'role');
+    preg_match('/^# Images.*\n- ([a-z0-9]+) \|/m', $input, $m);
+    return [
+        'title' => 'Cours de céramique à Lyon pour débutants', 'slug' => 'cours-ceramique-lyon', 'seo_title' => 'Cours de céramique à Lyon pour débutants',
+        'seo_description' => 'Des cours de céramique à Lyon pour débutants : petits groupes, matériel fourni, horaires souples. Réserve ton premier atelier dès cette semaine.',
+        'summary' => 'Notre atelier lyonnais propose des cours de céramique pour débutants, en petits groupes, avec le matériel fourni. Tarif : [À compléter : prix d’un cours].',
+        'keyword' => 'cours de céramique Lyon',
+        'sections' => [
+            $s(['type' => 'hero', 'title' => 'Cours de céramique à Lyon', 'text' => 'Apprends le tour en **petits groupes**.', 'button' => 'Réserver', 'url' => '/contact',
+                'button2' => 'Piège', 'url2' => 'javascript:alert(1)', 'media' => $m[1] ?? '']),
+            $s(['type' => 'features', 'title' => 'Pourquoi nous', 'items' => [$i('Petits groupes', '6 élèves au plus.', '👥'), $i('Matériel fourni', 'Terre et émaux compris.<script>alert(1)</script>', '🏺')]]),
+            $s(['type' => 'heading', 'title' => 'Comment se passe un cours ?', 'style' => '2']),
+            $s(['type' => 'paragraph', 'text' => 'Chaque cours dure [À compléter : durée]. <img src=x onerror=alert(1)>Voir [nos ateliers](/services).']),
+            $s(['type' => 'list', 'style' => 'ol', 'items' => [$i('', 'Accueil et café'), $i('', 'Modelage au tour')]]),
+            $s(['type' => 'image', 'title' => 'Atelier', 'media' => 'inconnue456']),
+            $s(['type' => 'callout', 'style' => 'tip', 'text' => 'Viens avec des vêtements qui ne craignent rien.']),
+            $s(['type' => 'faq', 'items' => [$i('Faut-il savoir dessiner ?', 'Non, aucun prérequis.')]]),
+            $s(['type' => 'button', 'button' => 'Nous écrire', 'url' => '/contact']),
+            $s(['type' => 'contact', 'title' => 'Une question ?']),
+            $s(['type' => 'inconnu', 'title' => 'Ignoré']),
+            // Affiliation : liens par adresses provisoires (un connu, un inconnu, une adresse hors lien), le second produit oublié.
+            ...(str_contains($input, 'https://aff.invalid/1') ? [
+                $s(['type' => 'button', 'button' => 'Voir l’offre', 'url' => 'https://aff.invalid/1']),
+                $s(['type' => 'paragraph', 'text' => 'Notre préféré : [le premier](https://aff.invalid/1). Un lien inconnu : [fantôme](https://aff.invalid/9). Adresse seule : https://aff.invalid/3 fin.']),
+            ] : []),
+        ],
+    ];
+}
+
+/* ───────────────────────────── Anthropic ───────────────────────────── */
+
+if (preg_match('~^/v1/models/([\w.-]+)$~', $path, $m) && $method === 'GET') {
+    $key = $header('x-api-key') ?: str_replace('Bearer ', '', $header('authorization'));
+    if (!in_array($key, ['sk-ant-test-0123456789', 'sk-test-openai-0123456789'], true)) {
+        fail('invalid x-api-key', 401);
+    }
+    header('Content-Type: application/json');
+    echo json_encode(['id' => $m[1], 'type' => 'model', 'display_name' => $m[1]]);
+    exit;
+}
+
+/* Polices (miroir de Fontsource) : une vraie signature WOFF2, sauf « syne » (page HTML) et « unbounded » (absente). */
+if (preg_match('~^/fonts/([a-z0-9-]+)@latest/latin-(\d+)-normal\.woff2$~', $path, $m)) {
+    if ($m[1] === 'unbounded') {
+        fail('not found', 404);
+    }
+    header('Content-Type: ' . ($m[1] === 'syne' ? 'text/html' : 'font/woff2'));
+    echo $m[1] === 'syne' ? '<!doctype html><title>Erreur</title>' . str_repeat(' ', 2000) : 'wOF2' . str_repeat(hash('sha256', $m[1] . $m[2], true), 64);
+    exit;
+}
+
+if ($path === '/v1/messages' && $method === 'POST') {
+    if ($header('x-api-key') !== 'sk-ant-test-0123456789') {
+        fail('invalid x-api-key', 401);
+    }
+    $errors = [];
+    if ($header('anthropic-version') !== '2026-10-21') {
+        $errors[] = 'anthropic-version must be 2026-10-21';
+    }
+    foreach (['temperature', 'top_p', 'top_k', 'thinking'] as $k) {
+        if (isset($body[$k])) {
+            $errors[] = "$k must not be sent";
+        }
+    }
+    if (($body['stream'] ?? false) !== true || !is_array($body['system'] ?? null) || ($body['system'][0]['cache_control']['type'] ?? '') !== 'ephemeral') {
+        $errors[] = 'stream, system blocks and cache_control expected';
+    }
+    if ($body['model'] === 'claude-opus-5-5' && (($body['fallbacks'] ?? '') !== 'default' || !str_contains($header('anthropic-beta'), 'server-side-fallback-2026-07-01'))) {
+        $errors[] = 'fallbacks "default" + beta header expected';
+    }
+    if (isset($body['tool_choice'])) {
+        $errors[] = 'tool_choice must not be forced';
+    }
+    $messages = $body['messages'] ?? [];
+    if (!$messages || $messages[0]['role'] !== 'user' || end($messages)['role'] !== 'user') {
+        $errors[] = 'messages must start and end with a user turn';
+    }
+    // Le tour précédent doit revenir intact : bloc de réflexion signé, puis un résultat par outil demandé.
+    $calls = [];
+    foreach ($messages as $i => $msg) {
+        foreach (is_array($msg['content']) ? $msg['content'] : [] as $block) {
+            if (($block['type'] ?? '') === 'tool_use') {
+                $calls[$block['id']] = $block;
+                if (!is_array($block['input']) && !is_object($block['input'])) {
+                    $errors[] = 'tool_use input must be an object';
+                }
+            }
+            if (($block['type'] ?? '') === 'thinking' && ($block['signature'] ?? '') !== 'sig-' . $i) {
+                $errors[] = 'thinking block not echoed unchanged at message ' . $i;
+            }
+            if (($block['type'] ?? '') === 'tool_result') {
+                unset($calls[$block['tool_use_id']]);
+            }
+        }
+    }
+    if ($calls) {
+        $errors[] = 'missing tool_result for ' . implode(', ', array_keys($calls));
+    }
+    if ($errors) {
+        fail(implode('; ', $errors));
+    }
+    $structured = $body['output_config']['format']['schema'] ?? null;
+    $last = end($messages)['content'];
+    $results = array_values(array_filter(is_array($last) ? $last : [], fn ($b) => ($b['type'] ?? '') === 'tool_result'));
+    $userText = '';
+    foreach (array_reverse($messages) as $msg) {
+        $texts = array_filter(is_array($msg['content']) ? $msg['content'] : [], fn ($b) => ($b['type'] ?? '') === 'text');
+        if ($msg['role'] === 'user' && $texts) {
+            $userText = implode(' ', array_column($texts, 'text'));
+            break;
+        }
+    }
+    // Étapes déjà faites dans ce tour (résultats d'outils reçus depuis le dernier message de la personne).
+    $steps = 0;
+    foreach (array_reverse($messages) as $msg) {
+        $parts = is_array($msg['content']) ? $msg['content'] : [];
+        if ($msg['role'] === 'user' && array_filter($parts, fn ($b) => ($b['type'] ?? '') === 'text')) {
+            break;
+        }
+        $steps += $msg['role'] === 'user' ? 1 : 0;
+    }
+    $index = count($messages);
+    $usage = ['input_tokens' => 1000, 'cache_creation_input_tokens' => 2000, 'cache_read_input_tokens' => 500, 'output_tokens' => 1];
+    $events = [['type' => 'message_start', 'message' => ['id' => 'msg_' . $index, 'type' => 'message', 'role' => 'assistant', 'model' => $body['model'], 'content' => [], 'usage' => $usage]]];
+    $block = 0;
+    $text = static function (string $t) use (&$events, &$block): void {
+        $events[] = ['type' => 'content_block_start', 'index' => $block, 'content_block' => ['type' => 'text', 'text' => '']];
+        foreach (mb_str_split($t, 12) as $piece) {
+            $events[] = ['type' => 'content_block_delta', 'index' => $block, 'delta' => ['type' => 'text_delta', 'text' => $piece]];
+        }
+        $events[] = ['type' => 'content_block_stop', 'index' => $block++];
+    };
+    $tool = static function (string $name, array $input) use (&$events, &$block, $index): void {
+        $json = json_encode($input, JSON_UNESCAPED_UNICODE);
+        $events[] = ['type' => 'content_block_start', 'index' => $block, 'content_block' => ['type' => 'tool_use', 'id' => 'toolu_' . $index . '_' . $block, 'name' => $name, 'input' => new stdClass()]];
+        foreach (mb_str_split($json, 40) as $piece) {
+            $events[] = ['type' => 'content_block_delta', 'index' => $block, 'delta' => ['type' => 'input_json_delta', 'partial_json' => $piece]];
+        }
+        $events[] = ['type' => 'content_block_stop', 'index' => $block++];
+    };
+    // Réflexion (texte omis, seule la signature arrive) : elle devra être renvoyée telle quelle.
+    $events[] = ['type' => 'content_block_start', 'index' => $block, 'content_block' => ['type' => 'thinking', 'thinking' => '', 'signature' => '']];
+    $events[] = ['type' => 'content_block_delta', 'index' => $block, 'delta' => ['type' => 'signature_delta', 'signature' => 'sig-' . $index]];
+    $events[] = ['type' => 'content_block_stop', 'index' => $block++];
+    $events[] = ['type' => 'ping'];
+
+    $stop = 'end_turn';
+    $first = $results ? json_decode((string) $results[0]['content'], true) : null;
+    if ($structured) {
+        $text(json_encode(isset($structured['properties']['sections']) ? composed($userText) : (isset($structured['properties']['directions']) ? designed() : sample($structured, 'value', $userText)), JSON_UNESCAPED_UNICODE));
+    } elseif (str_contains($userText, 'REFUS')) {
+        $stop = 'refusal';
+    } elseif (str_contains($userText, 'ARTICLE') && !$results) {
+        $text('Je prépare ton article.');
+        $tool('generate_image', ['prompt' => 'A bright ceramic studio with handmade bowls, soft morning light, warm tones, natural editorial photograph, no text.', 'alt' => 'Bols en céramique dans un atelier lumineux', 'format' => 'landscape', 'name' => 'atelier ceramique']);
+        $stop = 'tool_use';
+    } elseif (str_contains($userText, 'ARTICLE') && isset($first['media_id'])) {
+        $tool('create_draft', [
+            'type' => 'post', 'title' => 'Comment débuter la céramique en 5 étapes', 'keyword' => 'débuter la céramique',
+            'summary' => 'Pour débuter la céramique, commence par un cours d’initiation, choisis une argile facile et pratique régulièrement. En cinq étapes simples, tu crées tes premières pièces en quelques semaines.',
+            'seo_title' => 'Débuter la céramique : le guide en 5 étapes', 'seo_description' => 'Comment débuter la céramique ? Matériel, argile, premiers gestes et erreurs à éviter : notre guide en 5 étapes pour créer tes premières pièces.',
+            'image' => $first['media_id'],
+            'body' => "# Comment débuter la céramique en 5 étapes\n\nDébuter la céramique demande surtout de la **patience** et un bon accompagnement.\n\n## Pourquoi se lancer ?\n\nLa céramique apaise et développe la créativité. Voir [nos cours](/cours).\n\n## Quel matériel choisir ?\n\n- Une argile *facile* à travailler\n- Des outils de base\n- Un tablier\n\n| Étape | Durée |\n| --- | --- |\n| Modelage | 2 h |\n| Cuisson | 8 h |\n\n> [!TIP] Bon à savoir\n> Commence par des bols simples.\n\n> La terre ne ment jamais.\n> — Une potière\n\n![Bols en céramique](media:" . $first['media_id'] . ")\n\n<script>alert('xss')</script>\n\n[Lien piégé](javascript:alert(1))",
+            'faq' => [['question' => 'Combien de temps pour apprendre ?', 'answer' => 'Quelques **semaines** de pratique régulière suffisent pour les bases.']],
+        ]);
+        $stop = 'tool_use';
+    } elseif (str_contains($userText, 'EQUIPE') && !$results) {
+        $tool('search_content', ['query' => 'équipe', 'type' => 'page']);
+        $stop = 'tool_use';
+    } elseif (str_contains($userText, 'EQUIPE') && isset($first['results'])) {
+        preg_match('/media:([a-z0-9]+)/', $userText, $photo);
+        $tool('update_content', ['id' => $first['results'][0]['id'] ?? 'inconnu', 'note' => 'Ajout de Léa Martin à l’équipe',
+            'team_member' => ['name' => 'Léa Martin', 'role' => 'Céramiste', 'bio' => 'Léa anime les **cours du soir** depuis 2019.', 'photo' => $photo[1] ?? '', 'link' => 'https://www.linkedin.com/in/lea-martin']]);
+        $stop = 'tool_use';
+    } elseif (preg_match('/MODIFIE ([a-z0-9]+)/', $userText, $id) && !$results) {
+        $tool('update_content', ['id' => $id[1], 'note' => 'Introduction plus claire et FAQ enrichie', 'title' => 'Débuter la céramique : 5 étapes simples',
+            'replace' => [['find' => 'surtout de la patience', 'replace' => 'avant tout de la *patience*'], ['find' => 'texte absent', 'replace' => 'x']],
+            'append' => "## Où trouver un atelier ?\n\nCherche un atelier près de chez toi.", 'after_heading' => 'Pourquoi se lancer ?',
+            'faq' => [['question' => 'Faut-il un four ?', 'answer' => 'Non, l’atelier cuit tes pièces.']]]);
+        $stop = 'tool_use';
+    } elseif (str_contains($userText, 'EDITEUR') && !$results) {
+        $tool('update_content', ['id' => 'current', 'note' => 'FAQ ajoutée', 'faq' => [['question' => 'Est-ce difficile ?', 'answer' => 'Non, avec un bon accompagnement.']], 'summary' => 'Un résumé neuf et clair pour ce contenu en cours de rédaction.']);
+        $stop = 'tool_use';
+    } elseif (preg_match('/DOUBLE ([a-z0-9]+)/', $userText, $id) && $steps < 2) {
+        // Deux modifications successives du même contenu dans un tour : la seconde doit partir de la première.
+        $tool('update_content', $steps === 0 ? ['id' => $id[1], 'note' => 'Titre revu', 'title' => 'Titre revu par l’IA']
+            : ['id' => $id[1], 'note' => 'Résumé ajouté', 'summary' => 'Un résumé ajouté par la seconde modification de l’IA.',
+                'replace' => [['find' => 'sommes une', 'replace' => 'x'], ['find' => 'promo', 'replace' => 'soldes']]]);
+        $stop = 'tool_use';
+    } elseif ($results) {
+        $text('C’est fait ! ' . (isset($first['error']) ? 'Erreur outil : ' . $first['error'] : 'Relis le brouillon avant de le publier.'));
+    } else {
+        $text('Bonjour ! Je peux **écrire un article**, créer une page ou retoucher tes textes.');
+    }
+    $events[] = ['type' => 'message_delta', 'delta' => ['stop_reason' => $stop, 'stop_sequence' => null], 'usage' => ['output_tokens' => 400]];
+    $events[] = ['type' => 'message_stop'];
+    sse($events);
+}
+
+/* ───────────────────────────── OpenAI ───────────────────────────── */
+
+if ($path === '/v1/responses' && $method === 'POST') {
+    if ($header('authorization') !== 'Bearer sk-test-openai-0123456789') {
+        fail('Incorrect API key provided: sk-test…6789', 401);
+    }
+    $errors = [];
+    if (($body['store'] ?? true) !== false || ($body['stream'] ?? false) !== true || !is_string($body['instructions'] ?? null)) {
+        $errors[] = 'store=false, stream=true and instructions expected';
+    }
+    foreach (['temperature', 'top_p'] as $k) {
+        if (isset($body[$k])) {
+            $errors[] = "$k must not be sent";
+        }
+    }
+    $calls = [];
+    $reasoning = 0;
+    foreach ($body['input'] ?? [] as $item) {
+        if (($item['type'] ?? '') === 'function_call') {
+            $calls[$item['call_id']] = true;
+        }
+        if (($item['type'] ?? '') === 'function_call_output') {
+            unset($calls[$item['call_id']]);
+        }
+        if (($item['type'] ?? '') === 'reasoning') {
+            $reasoning += ($item['encrypted_content'] ?? '') === 'enc-1' ? 1 : 100;
+        }
+    }
+    if ($calls) {
+        $errors[] = 'missing function_call_output for ' . implode(', ', array_keys($calls));
+    }
+    // Comme l'API réelle : sans stockage, un raisonnement renvoyé sans son contenu chiffré est introuvable.
+    if ($reasoning >= 100) {
+        fail("Item with id 'rs_1' not found. Items are not persisted when `store` is set to false.", 404);
+    }
+    if ($errors) {
+        fail(implode('; ', $errors));
+    }
+    $outputs = array_values(array_filter($body['input'], fn ($i) => ($i['type'] ?? '') === 'function_call_output'));
+    $userText = '';
+    foreach (array_reverse($body['input']) as $item) {
+        if (($item['role'] ?? '') === 'user') {
+            foreach ((array) $item['content'] as $part) {
+                $userText .= is_array($part) ? (string) ($part['text'] ?? '') : (string) $part;
+            }
+            break;
+        }
+    }
+    $out = [['type' => 'reasoning', 'id' => 'rs_1', 'summary' => []] + (in_array('reasoning.encrypted_content', (array) ($body['include'] ?? []), true) ? ['encrypted_content' => 'enc-1'] : [])];
+    $events = [['type' => 'response.created', 'response' => ['id' => 'resp_1', 'status' => 'in_progress']]];
+    $structured = $body['text']['format']['schema'] ?? null;
+    if ($structured) {
+        $answer = json_encode(isset($structured['properties']['sections']) ? composed($userText) : (isset($structured['properties']['directions']) ? designed() : sample($structured, 'value', $userText)), JSON_UNESCAPED_UNICODE);
+    } elseif (str_contains($userText, 'ARTICLE') && count($outputs) === 0) {
+        $out[] = ['type' => 'function_call', 'id' => 'fc_1', 'call_id' => 'call_1', 'name' => 'create_draft', 'status' => 'completed', 'arguments' => json_encode([
+            'type' => 'post', 'title' => 'Article écrit par GPT', 'body' => "Introduction.\n\n## Partie\n\nTexte.", 'summary' => 'Résumé.', 'keyword' => 'test',
+        ], JSON_UNESCAPED_UNICODE)];
+    } else {
+        $answer = $outputs ? 'Brouillon prêt, relis-le.' : 'Bonjour depuis GPT.';
+    }
+    foreach ($out as $i => $item) {
+        $events[] = ['type' => 'response.output_item.added', 'output_index' => $i, 'item' => ['type' => $item['type'], 'id' => $item['id']] + ($item['type'] === 'function_call' ? ['call_id' => $item['call_id'], 'name' => $item['name'], 'arguments' => ''] : [])];
+        $events[] = ['type' => 'response.output_item.done', 'output_index' => $i, 'item' => $item];
+    }
+    if (isset($answer)) {
+        $i = count($out);
+        $events[] = ['type' => 'response.output_item.added', 'output_index' => $i, 'item' => ['type' => 'message', 'id' => 'msg_1', 'role' => 'assistant', 'content' => []]];
+        foreach (mb_str_split($answer, 10) as $piece) {
+            $events[] = ['type' => 'response.output_text.delta', 'item_id' => 'msg_1', 'output_index' => $i, 'content_index' => 0, 'delta' => $piece];
+        }
+        $out[] = ['type' => 'message', 'id' => 'msg_1', 'role' => 'assistant', 'status' => 'completed', 'phase' => 'final_answer', 'content' => [['type' => 'output_text', 'text' => $answer, 'annotations' => []]]];
+        $events[] = ['type' => 'response.output_item.done', 'output_index' => $i, 'item' => end($out)];
+    }
+    $events[] = ['type' => 'response.completed', 'response' => ['id' => 'resp_1', 'status' => 'completed', 'output' => $out,
+        'usage' => ['input_tokens' => 3000, 'input_tokens_details' => ['cached_tokens' => 1000, 'cache_write_tokens' => 500], 'output_tokens' => 600]]];
+    sse($events);
+}
+
+/* ───────────────────────────── Images ───────────────────────────── */
+
+if ($path === '/v1/images/generations' && $method === 'POST') {
+    if ($header('authorization') !== 'Bearer sk-test-openai-0123456789') {
+        fail('Incorrect API key provided', 401);
+    }
+    if (($body['model'] ?? '') !== 'gpt-image-2.5-flare' || ($body['size'] ?? '') !== '1536x1024' || ($body['output_format'] ?? '') !== 'webp' || isset($body['response_format'])) {
+        fail('unexpected image request: ' . json_encode($body));
+    }
+    header('Content-Type: application/json');
+    echo json_encode(['created' => time(), 'data' => [['b64_json' => base64_encode(picture(1536, 1024))]], 'usage' => ['input_tokens' => 60, 'output_tokens' => 1500]]);
+    exit;
+}
+
+if ($path === '/v1/flux-3-image' && $method === 'POST') {
+    if ($header('x-key') !== 'bfl-test-key-0123456789') {
+        fail('Not authenticated', 401);
+    }
+    if (($body['aspect_ratio'] ?? '') !== '16:9' || ($body['resolution'] ?? '') !== '1k' || isset($body['output_format']) || isset($body['seed'])) {
+        fail('unexpected FLUX request', 422);
+    }
+    header('Content-Type: application/json');
+    $job = str_contains((string) ($body['prompt'] ?? ''), 'MODERE') ? 'mod1' : 'job1';
+    echo json_encode(['id' => $job, 'polling_url' => $base . '/v1/get_result?id=' . $job, 'cost' => 4.8]);
+    exit;
+}
+
+if ($path === '/v1/get_result') {
+    if ($header('x-key') !== 'bfl-test-key-0123456789') {
+        fail('Not authenticated', 401);
+    }
+    if (($_GET['id'] ?? '') === 'mod1') {
+        header('Content-Type: application/json');
+        echo json_encode(['id' => 'mod1', 'status' => 'Content Moderated']);
+        exit;
+    }
+    $count = (int) @file_get_contents($dir . '/poll') + 1;
+    file_put_contents($dir . '/poll', (string) $count);
+    header('Content-Type: application/json');
+    echo json_encode($count < 2 ? ['id' => 'job1', 'status' => 'Pending'] : ['id' => 'job1', 'status' => 'Ready', 'result' => ['sample' => $base . '/delivery/job1.jpg']]);
+    exit;
+}
+
+if (preg_match('~^/v2/image/generate/ideogram-3$~', $path) && $method === 'POST') {
+    if ($header('api-key') !== 'ideo-test-key-0123456789') {
+        fail('Unauthorized', 401);
+    }
+    if (($_POST['aspect_ratio'] ?? '') !== '16x9' || ($_POST['rendering_speed'] ?? '') !== 'default' || ($_POST['prompt'] ?? '') === '') {
+        fail('unexpected Ideogram request: ' . json_encode($_POST), 422);
+    }
+    header('Content-Type: application/json');
+    echo json_encode(['generation_id' => 'g1', 'data' => [['prompt' => $_POST['prompt'], 'resolution' => '1312x736', 'is_image_safe' => !str_contains($_POST['prompt'], 'MODERE'),
+        'url' => $base . (str_contains($_POST['prompt'], 'PERDUE') ? '/delivery/perdue.png' : '/delivery/ideo.png')]]]);
+    exit;
+}
+
+if (str_starts_with($path, '/delivery/')) {
+    if ($header('x-key') !== '' || $header('api-key') !== '') {
+        fail('provider key must never be sent to delivery URLs', 400);
+    }
+    if ($path === '/delivery/perdue.png') {
+        fail('image expired', 404);
+    }
+    $jpeg = str_ends_with($path, '.jpg');
+    header('Content-Type: ' . ($jpeg ? 'image/jpeg' : 'image/png'));
+    echo picture(1344, 768, $jpeg ? 'jpeg' : 'png');
+    exit;
+}
+
+fail('unknown endpoint ' . $method . ' ' . $path, 404);
