@@ -1,0 +1,19 @@
+<?php
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 Thierry Gustin
+defined('HEAVEN') || exit;
+
+use Heaven\Icons;
+use Heaven\Security;
+?>
+<form class="auth-card" method="post" action="<?= e(admin_url('login/2fa')) ?>">
+  <span class="logo"><span class="logo-mark"><?= Icons::mark() ?></span></span>
+  <h1><?= e(t('Code de vérification')) ?></h1>
+  <p class="sub"><?= e(t('Saisis le code à 6 chiffres affiché par ton application d’authentification.')) ?></p>
+  <?php if ($v['error'] !== ''): ?><div class="notice bad" role="alert"><p><?= e($v['error']) ?></p></div><?php endif ?>
+  <?= Security::csrfField() ?>
+  <label class="field"><span class="sr-only"><?= e(t('Code')) ?></span>
+    <input class="otp" type="text" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="11" required autofocus placeholder="000000"></label>
+  <button class="btn btn-primary btn-lg btn-block" type="submit"><?= e(t('Vérifier')) ?></button>
+  <p class="small muted center"><?= e(t('Téléphone perdu ? Saisis l’un de tes codes de secours (format abcde-12345).')) ?></p>
+</form>

@@ -1,0 +1,27 @@
+<?php
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 Thierry Gustin
+/** Mise en page plein écran (éditeur). */
+defined('HEAVEN') || exit;
+
+use Heaven\I18n;
+use Heaven\Settings;
+?><!doctype html>
+<html lang="<?= e(I18n::lang()) ?>">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title><?= e($v['page_title']) ?> · <?= e(Settings::get('name')) ?></title>
+<?= admin_css() ?>
+<link rel="icon" href="<?= e(asset('admin/favicon.svg')) ?>" type="image/svg+xml">
+<script src="<?= e(asset('admin/admin.js')) ?>" defer></script>
+<script src="<?= e(asset('admin/editor.js')) ?>" defer></script>
+<?php if (\Heaven\Ai::allowed(\Heaven\Auth::user())): ?><script src="<?= e(asset('admin/assistant.js')) ?>" defer></script><?php endif ?>
+</head>
+<body>
+<?= $v['content'] ?>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<?= \Heaven\Admin::jsData($v['js'] ?? []) ?>
+</body>
+</html>

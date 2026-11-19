@@ -1,0 +1,22 @@
+{
+  "schema": "heaven-extension/1",
+  "id": "wordpress",
+  "name": "Import WordPress",
+  "version": "2.0.1",
+  "description": "Reprends un site WordPress à partir de son export (.xml) ou d’un paquet Heaven Export : contenus, images, SEO, menus et redirections, avec leurs adresses exactes, pour garder les liens et le référencement ; rapport de migration pour le client.",
+  "requires": { "heaven": ">=2.0.0", "php": ">=8.1" },
+  "provides": ["import", "wordpress"],
+  "entry": "extension.php",
+  "routes": {
+    "public": [],
+    "admin": [
+      { "method": "GET", "path": "", "handler": "page", "right": "settings" },
+      { "method": "POST", "path": "", "handler": "action", "right": "settings" },
+      { "method": "POST", "path": "/step", "handler": "step", "right": "settings" },
+      { "method": "GET", "path": "/report", "handler": "report", "right": "settings" }
+    ]
+  },
+  "nav": [{ "label": "Import WordPress", "path": "", "icon": "upload", "right": "settings" }],
+  "data": { "schema": 1 },
+  "provenance": { "source": "Heaven CMS (fonction livrée avec le noyau)", "license": "AGPL-3.0-only" }
+}

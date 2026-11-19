@@ -1,0 +1,28 @@
+<?php
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 Thierry Gustin
+/** Fenêtre d'installation expirée. Variables : lang */
+defined('HEAVEN') || exit;
+
+use Heaven\Icons;
+?><!doctype html>
+<html lang="<?= e($v['lang']) ?>">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title><?= e(t('Installation de Heaven')) ?></title>
+<?= admin_css() ?>
+<link rel="icon" href="<?= e(asset('admin/favicon.svg')) ?>" type="image/svg+xml">
+</head>
+<body>
+<div class="auth">
+  <div class="auth-card">
+    <span class="logo"><span class="logo-mark"><?= Icons::mark() ?></span><span><b>Heaven</b><small><?= e(t('Installation')) ?></small></span></span>
+    <h1><?= e(t('Installation verrouillée')) ?></h1>
+    <p><?= e(t('Par sécurité, l’installation doit être faite dans les 2 heures qui suivent la première visite : sinon, n’importe qui pourrait prendre le contrôle d’un site oublié.')) ?></p>
+    <p><b><?= e(t('Pour la rouvrir :')) ?></b> <?= e(t('supprime le fichier data/install-window.php avec ton logiciel FTP (ou le gestionnaire de fichiers de ton hébergeur), puis recharge cette page.')) ?></p>
+  </div>
+</div>
+</body>
+</html>

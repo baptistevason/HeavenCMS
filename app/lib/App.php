@@ -1,0 +1,120 @@
+<?php
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 Thierry Gustin
+declare(strict_types=1);
+
+namespace Heaven;
+
+defined('HEAVEN') || exit;
+
+/** Point d'entrée : gestion des erreurs puis aiguillage vers l'installateur, l'admin ou le site. */
+final class App
+{
+    public static function run(): never
+    {
+        // Génération du cache figée avant toute lecture de réglages ou de contenus (voir Cache::put).
+        Cache::generation();
+        error_reporting(E_ALL);
+        ini_set('display_errors', HEAVEN_DEBUG ? '1' : '0');
+        set_error_handler([self::class, 'onError']);
+        set_exception_handler([self::class, 'onException']);
+        header_remove('X-Powered-By');
+        mb_internal_encoding('UTF-8');
+
+        $path = Req::path();
+
+        // Test de la réécriture d'URL (installateur) et preuve d'identité du site (Loopback).
+        if ($path === '/__heaven/ping') {
+            $nonce = Req::query('n');
+            if (preg_match('/^[a-f0-9]{32}$/', $nonce) && Settings::installed()) {
+                Http::json(Loopback::answer($nonce));
+            }
+            Http::send('ok', 200, ['Content-Type: text/plain; charset=utf-8', 'Cache-Control: no-store']);
+        }
+
+        if (!Settings::installed()) {
+            Installer::handle();
+        }
+
+        // Migrations de la version installée (identifiées, idempotentes, sous verrou) : une lecture quand tout est fait.
+        Migrations::run();
+        date_default_timezone_set((string) Settings::get('timezone') ?: 'UTC');
+        I18n::setLang((string) Settings::get('lang', 'fr'));
+
+        $admin = '/' . Settings::get('admin_path', 'admin');
+        if ($path === $admin || str_starts_with($path, $admin . '/')) {
+            Admin::handle(substr($path, strlen($admin)) ?: '/');
+        }
+        if ($path === '/_heaven/contact') {
+            Contact::handle();
+        }
+        // Bouton « Modifier » du site public : n'envoie vers l'administration que les personnes connectées.
+        if (preg_match('~^/_heaven/edit/([a-z0-9]{1,40})$~', $path, $m) && Auth::can('content')) {
+            Http::redirect(admin_url('edit/' . $m[1]));
+        }
+        // Tâche planifiée des sauvegardes Google Drive (adresse secrète).
+        // Adresse historique (1.x), toujours valable : servie par la fonction « drive » si le site l'a ajoutée.
+        if (preg_match('~^/_heaven/backup/([a-f0-9]{32})$~', $path, $m)) {
+            Extensions::invoke('drive', 'cron', [$m[1]]);
+        }
+        // Tâche planifiée du planning éditorial (adresse secrète) : rédige l'idée due, s'il y en a une.
+        // Adresse historique (1.x), toujours valable : servie par la fonction « planning » si le site l'a ajoutée.
+        if (preg_match('~^/_heaven/plan/([a-f0-9]{32})$~', $path, $m)) {
+            Extensions::invoke('planning', 'cron', [$m[1]]);
+        }
+        // Tâches planifiées des capacités optionnelles (adresse secrète, Extensions::taskUrl()).
+        if (preg_match('~^/_heaven/tasks/([a-f0-9]{32})$~', $path, $m)) {
+            Extensions::tick($m[1]);
+        }
+        // Paquet envoyé par l'extension WordPress « Heaven Export » : l'adresse n'existe que pendant qu'une clé de liaison est active.
+        if ($path === '/_heaven/import') {
+            Extensions::invoke('wordpress', 'receive');
+        }
+        // Connecteur MCP (Claude, ChatGPT) et sa découverte OAuth : rien ne répond tant qu'il est désactivé.
+        if (str_starts_with($path, '/_heaven/') || str_starts_with($path, '/.well-known/')) {
+            Mcp::handle($path);
+        }
+        // Routes publiques des capacités actives : sans fonction active qui en déclare, leur registre n'est même pas chargé.
+        if (Store::exists('ext-public')) {
+            Extensions::route($path);
+        }
+        Site::handle($path);
+    }
+
+    public static function onError(int $no, string $message, string $file, int $line): bool
+    {
+        if (!(error_reporting() & $no)) {
+            return false;
+        }
+        if (HEAVEN_DEBUG && !($no & (E_DEPRECATED | E_USER_DEPRECATED))) {
+            throw new \ErrorException($message, 0, $no, $file, $line);
+        }
+        Log::error(new \ErrorException($message, 0, $no, $file, $line));
+        return true;
+    }
+
+    public static function onException(\Throwable $e): void
+    {
+        $id = Log::error($e);
+        if (headers_sent()) {
+            return;
+        }
+        // Panne du serveur que la personne peut régler (verrou des données) : son message dit quoi faire, partout.
+        $storage = $e instanceof StorageException;
+        http_response_code($storage ? 503 : 500);
+        header('Cache-Control: no-store');
+        if (Req::wantsJson()) {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['ok' => false, 'error' => HEAVEN_DEBUG || $storage ? $e->getMessage() : 'Erreur interne (' . $id . ')']);
+            return;
+        }
+        header('Content-Type: text/html; charset=utf-8');
+        $detail = HEAVEN_DEBUG ? '<pre style="white-space:pre-wrap;font-size:13px">' . e((string) $e) . '</pre>' : '';
+        echo '<!doctype html><html lang="fr"><meta charset="utf-8"><meta name="viewport" content="width=device-width">'
+            . '<meta name="robots" content="noindex"><title>Oups…</title>'
+            . '<body style="font:17px/1.6 system-ui,sans-serif;max-width:42rem;margin:12vh auto;padding:0 1.25rem;color:#1e1b4b">'
+            . '<p style="font-size:3rem;margin:0">⚡</p><h1 style="margin:.2em 0">Oups, un court-circuit.</h1>'
+            . '<p>' . ($storage ? e($e->getMessage()) : 'Une erreur inattendue est survenue. Réessaie dans un instant.') . '</p>'
+            . '<p style="color:#64748b;font-size:.9rem">Référence : ' . e($id) . '</p>' . $detail . '</body></html>';
+    }
+}
