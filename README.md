@@ -12,8 +12,8 @@ conservées dans `NOTICE`, `THIRD-PARTY-NOTICES.txt` et l'en-tête des fichiers 
 - Back-office tenu pour des milliers de pages : liste paginée, médiathèque par lots, éditeur allégé.
 - Indexation pour les moteurs et les IA : sitemap, `robots.txt`, `llms.txt`, version Markdown de chaque page, données
   structurées.
-- Thèmes (`heaven-theme/1`) et fonctions (`heaven-extension/1`) installables par archive ; un exemple de chaque dans
-  `examples/`.
+- Thèmes (`heaven-theme/1`) et fonctions (`heaven-extension/1`) installables par archive ; un thème modèle et un exemple de
+  fonction dans `examples/`.
 - Aucun contenu de site dans ce dépôt : chaque site apporte son thème, ses fonctions et ses données.
 
 ## Installer un site
@@ -36,6 +36,7 @@ php tests/run.php
 
 - `docs/GUIDE.md` : guide d'utilisation.
 - `docs/THEME-CONTRACT.md`, `docs/EXTENSION-CONTRACT.md` : contrats des thèmes et des fonctions.
+- `docs/THEME-STARTER.md` : thème modèle et `tools/new-theme.php`, pour créer le thème d'un nouveau site en une commande.
 
 ## Limites connues
 

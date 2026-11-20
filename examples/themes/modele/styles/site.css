@@ -1,0 +1,56 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+/* Thème modèle Heaven : on change l'identité d'un site en modifiant le bloc « Palette » ci-dessous, rien d'autre.
+   Générer un nouveau thème à partir de celui-ci : php tools/new-theme.php (voir docs/THEME-STARTER.md). */
+
+/* ── Palette (à adapter) ── */
+:root{
+  --accent:#1f6feb;--on-accent:#fff;--link:#1858c0;--link-dark:#0f3f8f;
+  --bg:#ffffff;--bg-soft:#eef3fb;--card:#ffffff;--text:#16202e;--muted:#5a6678;--line:#d6deea;
+  --radius:10px;--shadow:none;
+  --font:system-ui,"Segoe UI",Roboto,sans-serif;
+  --font-head:system-ui,"Segoe UI",Roboto,sans-serif;
+  --logo-h:clamp(64px,9vw,104px);          /* hauteur du logo dans l'en-tête */
+}
+body{background:var(--bg);color:var(--text)}
+h1,h2,h3,.card-title,.brand{font-family:var(--font-head)}
+
+/* ── En-tête : bandeau pleine largeur, logo centré, menu en dessous ── */
+.site-header{background:var(--bg-soft);border-bottom:1px solid var(--line);padding:0}
+.site-header .header-inner{flex-direction:column;align-items:center;justify-content:center;gap:0;padding:0;min-height:0;max-width:none;width:100%}
+.brand{display:flex;align-items:center;justify-content:center;padding:1rem 0 .85rem;color:var(--text);font-size:1.5rem;font-weight:700}
+.brand img{height:var(--logo-h);width:auto;max-width:min(80vw,24rem);object-fit:contain}
+.site-nav{margin:0;width:100%;background:var(--bg);border-top:1px solid var(--line);padding:.3rem 0}
+.site-nav ul{justify-content:center;width:auto;margin-inline:auto}
+.site-nav a{padding:.55rem 1rem;border-radius:0;font-weight:600;color:var(--text)}
+.site-nav a:hover,.site-nav a[aria-current]{background:none;color:var(--link-dark)}
+
+/* ── Menu mobile : bouton « Menu » qui déplie la liste (sans script) ── */
+.nav-toggle{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
+.nav-burger,.nav-label{display:none}
+@media (max-width:44rem){
+  .nav-burger{display:flex;align-items:center;justify-content:center;gap:.7rem;width:100%;min-height:52px;background:var(--bg);border-top:1px solid var(--line);font:700 1.05rem var(--font-head);color:var(--text);cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent}
+  .nav-burger-icon{position:relative;display:block;width:22px;height:2px;background:currentColor;border-radius:2px;transition:background .15s}
+  .nav-burger-icon::before,.nav-burger-icon::after{content:"";position:absolute;left:0;width:22px;height:2px;background:currentColor;border-radius:2px;transition:transform .2s,top .2s}
+  .nav-burger-icon::before{top:-7px}
+  .nav-burger-icon::after{top:7px}
+  .nav-toggle:checked + .nav-burger .nav-burger-icon{background:transparent}
+  .nav-toggle:checked + .nav-burger .nav-burger-icon::before{top:0;transform:rotate(45deg)}
+  .nav-toggle:checked + .nav-burger .nav-burger-icon::after{top:0;transform:rotate(-45deg)}
+  .nav-toggle:focus-visible + .nav-burger{outline:3px solid var(--link-dark);outline-offset:-3px}
+  .site-nav{display:none;width:100%;margin:0;padding:0;overflow:visible}
+  .nav-toggle:checked ~ .site-nav{display:block}
+  .site-nav ul{display:block;width:100%;margin:0;padding:0}
+  .site-nav li+li{border-top:1px solid var(--line)}
+  .site-nav a{display:flex;align-items:center;justify-content:center;gap:.6rem;min-height:52px;padding:.8rem 1.25rem;white-space:normal;font-size:1.1rem}
+  .site-nav .search-link{width:100%;height:auto;padding:.8rem 1.25rem}
+  .nav-label{display:inline}
+}
+
+/* ── Partage en fin d'article ── */
+.share{margin:2.5rem 0 1.5rem;padding:1.25rem 1.5rem;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);text-align:center}
+.share-title{margin:0 0 .85rem;font-family:var(--font-head);font-size:1.15rem;font-weight:700}
+.share ul{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:.5rem;justify-content:center}
+.share li{display:flex}
+.share a{display:inline-flex;align-items:center;min-height:48px;padding:0 1.1rem;border-radius:999px;background:var(--bg-soft);color:var(--link-dark);font-weight:700;text-decoration:none;border:1px solid var(--line);transition:background .15s,color .15s}
+.share a:hover,.share a:focus-visible{background:var(--link-dark);color:#fff}
+@media (max-width:34rem){.share ul{display:grid;grid-template-columns:1fr 1fr}.share a{flex:1;justify-content:center;padding:0 .6rem}}
