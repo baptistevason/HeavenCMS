@@ -89,6 +89,26 @@ $error = (string) ($s['error'] ?? '');
   </section>
   <?php endif ?>
 
+  <section class="card" id="packages">
+    <h2><?= e(t('Mises à jour des thèmes et des fonctions')) ?></h2>
+    <p class="small muted"><?= e(t('Elles viennent du canal déclaré par chaque thème ou fonction. Rien n’est installé sans ton clic.')) ?></p>
+    <?php if (!$v['packages']): ?>
+      <p><?= e(t('Aucune mise à jour de thème ou de fonction.')) ?></p>
+    <?php endif ?>
+    <?php foreach ($v['packages'] as $pk): ?>
+      <form method="post" action="<?= e(admin_url('update')) ?>" class="row between"><?= Security::csrfField() ?>
+        <input type="hidden" name="action" value="package"><input type="hidden" name="type" value="<?= e($pk['type']) ?>"><input type="hidden" name="id" value="<?= e($pk['id']) ?>">
+        <div><strong><?= e($pk['name']) ?></strong> <span class="mono small"><?= e($pk['from']) ?> → <?= e($pk['to']) ?></span>
+          <?php if ($pk['notes'] !== ''): ?><br><span class="small muted"><?= e($pk['notes']) ?></span><?php endif ?></div>
+        <div><?= Admin::partial('partials/confirm', ['required' => false]) ?>
+          <button class="btn btn-primary" type="submit" data-busy="<?= e(t('Installation en cours… ne ferme pas cette page.')) ?>"><?= Icons::svg('download') ?><?= e(t('Installer')) ?></button></div>
+      </form>
+    <?php endforeach ?>
+    <form method="post" action="<?= e(admin_url('update')) ?>"><?= Security::csrfField() ?><input type="hidden" name="action" value="check_packages">
+      <button class="btn btn-sm" type="submit"><?= Icons::svg('refresh') ?><?= e(t('Vérifier maintenant')) ?></button>
+      <?php if (!empty($v['packagesChecked'])): ?><span class="small muted"><?= e(t('Dernière vérification : {d}.', ['d' => fmt_date((int) $v['packagesChecked'], $lang, true)])) ?></span><?php endif ?></form>
+  </section>
+
   <?php if ($v['previous'] !== ''): ?>
   <section class="card">
     <h2><?= e(t('Revenir à la version précédente')) ?></h2>

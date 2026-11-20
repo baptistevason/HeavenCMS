@@ -37,6 +37,11 @@ $adminNav = [
     ['update', 'update', 'refresh', t('Mises à jour'), 'security'],
 ];
 $update = $user['role'] === 'admin' ? \Heaven\Update::pending() : null;
+// Thèmes et fonctions : relecture des canaux au plus toutes les 12 h, puis bandeau si une mise à jour est proposée.
+if ($user['role'] === 'admin') {
+    \Heaven\PackageUpdates::check();
+}
+$pkgUpdates = $user['role'] === 'admin' ? \Heaven\PackageUpdates::pending() : [];
 $unread = Messages::unread();
 $avatar = Media::get((string) ($user['avatar'] ?? ''));
 $initials = mb_strtoupper(mb_substr((string) $user['name'], 0, 1) . mb_substr((string) (explode(' ', (string) $user['name'])[1] ?? ''), 0, 1));
@@ -71,7 +76,7 @@ $initials = mb_strtoupper(mb_substr((string) $user['name'], 0, 1) . mb_substr((s
         <span class="nav-title"><?= e(t('Administration')) ?></span>
         <?php foreach ($adminNav as [$key, $path, $icon, $label]): ?>
           <a href="<?= e(admin_url($path)) ?>"<?= $section === $key ? ' aria-current="page"' : '' ?>><?= Icons::svg($icon) ?><?= e($label) ?>
-            <?php if ($key === 'update' && $update): ?><span class="count" title="<?= e(t('Heaven {v} est disponible.', ['v' => $update['version']])) ?>">1</span><?php endif ?></a>
+            <?php if ($key === 'update' && ($update || $pkgUpdates)): ?><span class="count"<?= $update ? ' title="' . e(t('Heaven {v} est disponible.', ['v' => $update['version']])) . '"' : '' ?>><?= ($update ? 1 : 0) + count($pkgUpdates) ?></span><?php endif ?></a>
         <?php endforeach ?>
       <?php endif ?>
       <span class="nav-title"><?= e(t('Raccourcis')) ?></span>
@@ -100,6 +105,12 @@ $initials = mb_strtoupper(mb_substr((string) $user['name'], 0, 1) . mb_substr((s
         <div class="notice <?= e($type) ?>" role="status" data-flash><span><?= Icons::svg(in_array($type, ['bad', 'warn'], true) ? 'alert' : 'circle-check') ?></span><p><?= e($message) ?></p></div>
       <?php endif ?>
     <?php endforeach ?>
+    <?php if ($pkgUpdates && $section !== 'update'): ?>
+      <div class="notice warn" role="status"><span><?= Icons::svg('refresh') ?></span>
+        <p><?php foreach (array_slice($pkgUpdates, 0, 3) as $i => $pk): ?><?= $i > 0 ? ' · ' : '' ?><strong><?= e(t('Mise à jour disponible : {name} {from} → {to}', ['name' => $pk['name'], 'from' => $pk['from'], 'to' => $pk['to']])) ?></strong><?php endforeach ?>
+        <?= count($pkgUpdates) > 3 ? e(' (+' . (count($pkgUpdates) - 3) . ')') : '' ?>
+        <a class="btn btn-sm" href="<?= e(admin_url('update')) ?>"><?= e(t('Voir et installer')) ?></a></p></div>
+    <?php endif ?>
     <?= $v['content'] ?>
   </main>
 </div>

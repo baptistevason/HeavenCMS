@@ -81,9 +81,10 @@ final class Themes
     }
 
     /**
-     * Met à jour les thèmes livrés : installés s'ils manquent, remplacés quand la version livrée est plus récente (l'ancienne
-     * reste dans site/themes/.versions/ pour un retour en un clic), puis réactivés si c'est le thème actif. Une lecture
-     * de quelques fichiers par requête quand tout est à jour ; ne bloque ni n'interrompt jamais une page.
+     * Met à jour les thèmes livrés : installés s'ils manquent (sauf sur un site qui a son propre thème), remplacés quand la
+     * version livrée est plus récente et que le thème n'est pas en service (l'ancienne reste dans site/themes/.versions/).
+     * Le thème en service est mis à jour au clic, depuis le bandeau. Une lecture de quelques fichiers par requête quand tout
+     * est à jour ; ne bloque ni n'interrompt jamais une page.
      *
      * @return array<string,string> id => version installée (ou message d'erreur)
      */
@@ -101,15 +102,18 @@ final class Themes
             }
             $done = [];
             $failed = false;
+            $active = (string) (self::state()['active']['id'] ?? '');
             foreach ($bundled as $id => $b) {
                 $installed = self::read($id);
                 if ($installed !== null && !version_compare((string) $b['version'], (string) $installed['version'], '>')) {
                     continue;
                 }
-                $r = self::install($b['dir']);
-                if ($r['ok'] && (string) (self::state()['active']['id'] ?? '') === $id) {
-                    $r = self::activate($id);
+                // Un thème en service n'est jamais remplacé en silence : la mise à jour est proposée par le bandeau de
+                // l'administration (PackageUpdates). Un site qui a déjà son propre thème n'a pas à en voir un de plus.
+                if ($installed !== null ? $id === $active : ($active !== '' && $active !== $id)) {
+                    continue;
                 }
+                $r = self::install($b['dir']);
                 $done[$id] = $r['ok'] ? (string) $b['version'] : (string) $r['error'];
                 $failed = $failed || !$r['ok'];
             }
@@ -237,6 +241,7 @@ final class Themes
             'version' => (string) ($m['version'] ?? ''),
             'contract' => is_int($m['contract'] ?? null) ? $m['contract'] : 0,
             'parent' => is_string($m['parent'] ?? null) ? $m['parent'] : 'heaven',
+            'update' => ['channel' => PackageUpdates::channel($m['update']['channel'] ?? '')],
             'templates' => array_values(array_intersect($list($m['templates'] ?? []), self::TEMPLATES)),
             'styles' => $list($m['styles'] ?? []),
             'overrides' => $overrides,
