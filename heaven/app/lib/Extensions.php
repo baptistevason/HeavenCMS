@@ -139,6 +139,7 @@ final class Extensions
             'name' => mb_substr(is_string($m['name'] ?? null) ? $m['name'] : (string) ($m['id'] ?? ''), 0, 80),
             'description' => mb_substr(is_string($m['description'] ?? null) ? $m['description'] : '', 0, 400),
             'version' => (string) ($m['version'] ?? ''),
+            'update' => ['channel' => PackageUpdates::channel($m['update']['channel'] ?? '')],
             'requires' => is_array($m['requires'] ?? null) ? array_map('strval', array_filter($m['requires'], 'is_scalar')) : [],
             'depends' => is_array($m['depends'] ?? null) ? array_map('strval', array_filter($m['depends'], 'is_scalar')) : [],
             'provides' => array_values(array_filter((array) ($m['provides'] ?? []), 'is_string')),

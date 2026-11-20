@@ -33,6 +33,15 @@ use Heaven\Themes;
     $base = dirname(__DIR__) . '/heaven/app/bundled-themes/heavencms';
     check('thème de base livré : conforme au contrat 1', Themes::validate($base) === [], implode(' | ', Themes::validate($base)));
     check('thème de base livré : reconnu par Themes::bundled()', isset(Themes::bundled()['heavencms']) && Themes::bundled()['heavencms']['version'] !== '');
+    // Canal de mises à jour d'un thème ou d'une fonction : seule une adresse latest.json de raw.githubusercontent.com est acceptée.
+    check('canal de mises à jour : adresses acceptées et refusées',
+        \Heaven\PackageUpdates::channel('https://raw.githubusercontent.com/compte/depot/main/latest.json') !== ''
+        && \Heaven\PackageUpdates::channel('https://raw.githubusercontent.com/compte/depot/main/sous/dossier/latest.json') !== ''
+        && \Heaven\PackageUpdates::channel('http://raw.githubusercontent.com/compte/depot/main/latest.json') === ''
+        && \Heaven\PackageUpdates::channel('https://evil.example/compte/depot/main/latest.json') === ''
+        && \Heaven\PackageUpdates::channel('https://raw.githubusercontent.com/compte/depot/main/latest.json?x=1') === ''
+        && \Heaven\PackageUpdates::channel('https://raw.githubusercontent.com/compte/depot/main/../latest.json') === ''
+        && \Heaven\PackageUpdates::channel(['x']) === '');
     check('thème de base : menu mobile sans script et partage des articles',
         str_contains((string) file_get_contents($base . '/templates/layout.php'), 'nav-toggle') && str_contains((string) file_get_contents($base . '/templates/single.php'), 'class="share"')
         && !str_contains((string) file_get_contents($base . '/styles/site.css'), '<script'));

@@ -11,7 +11,7 @@ site à chaque déploiement (voir `DEPLOIEMENT.md`). À activer une fois : Admin
 | **En-tête pleine largeur** | Bandeau et menu d'un bord à l'autre de l'écran, logo centré et agrandi |
 | **Menu mobile déroulant** | Bouton « Menu » qui déplie la liste, liens de 52 px de haut, **sans JavaScript** |
 | **Partage des articles** | Facebook, X, LinkedIn, WhatsApp, e-mail en fin d'article : de simples liens, aucun pisteur |
-| **Mises à jour automatiques** | Une publication du moteur met à jour le thème de tous les sites |
+| **Mises à jour proposées** | Une publication du moteur propose le nouveau thème à tous les sites (bandeau « Voir et installer ») |
 
 Pour le faire évoluer : modifier le thème dans le dépôt, **incrémenter sa version** dans `theme.json`, puis publier
 (`tools/release.sh`).
@@ -34,7 +34,7 @@ php tools/new-theme.php mon-site "Mon Site" --accent=#c0392b --link=#992d22 --li
 `link` est la couleur des liens sur fond clair et `link-dark` celle du texte accentué : les choisir assez foncées pour un
 contraste d'au moins 4,5:1 avec le fond.
 
-**Attention** : un thème propre est une **copie** du thème de base. Il ne reçoit plus ses mises à jour automatiques ; si
+**Attention** : un thème propre est une **copie** du thème de base. Il ne reçoit plus ses mises à jour ; pour le tenir à jour sur un site, déclarer un canal (`update` dans `theme.json`, voir `DEPLOIEMENT.md`) ; si
 un gabarit du noyau évolue (`layout`, `single`), reporter le changement à la main. Le garder au plus léger (peu de
 gabarits) limite ce travail. Un thème sans gabarit (seulement `styles`) n'exécute aucun code (voir `THEME-CONTRACT.md`).
 

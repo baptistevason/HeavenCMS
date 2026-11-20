@@ -21,12 +21,23 @@ final class AdminUpdate
             'modified' => $pending !== null ? Update::modified() : [],
             'previous' => Update::previous(),
             'zip' => class_exists('ZipArchive'),
+            'packages' => PackageUpdates::pending(),
+            'packagesChecked' => (int) (PackageUpdates::state()['checked'] ?? 0),
         ], t('Mises à jour'));
     }
 
     public static function action(array $user): never
     {
         switch (Req::input('action')) {
+            case 'check_packages':
+                PackageUpdates::check(true);
+                Admin::back('update', PackageUpdates::pending() ? t('Des mises à jour sont disponibles ci-dessous.') : t('Aucune mise à jour de thème ou de fonction.'));
+            case 'package':
+                if (!Auth::confirmed($user)) {
+                    Admin::back('update', t('Mot de passe incorrect.'), 'bad');
+                }
+                $r = PackageUpdates::install(Req::input('type'), Req::input('id'));
+                Admin::back('update', $r['ok'] ? (string) $r['message'] : (string) $r['error'], $r['ok'] ? 'ok' : 'bad');
             case 'check':
                 Update::latest(true);
                 $state = Update::state();

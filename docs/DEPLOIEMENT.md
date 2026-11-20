@@ -39,11 +39,30 @@ Au premier chargement dynamique après le déploiement (n'importe quelle page no
 paramètre inutile comme `/?maj=1` pour le provoquer aussitôt), Heaven compare les versions des thèmes livrés avec celles
 installées :
 
-- thème absent → installé ; thème plus ancien → remplacé (l'ancienne version est gardée dans `site/themes/.versions/`) ;
-- si c'est le thème actif, il est réactivé avec ses nouveaux fichiers ;
-- le cache des pages est vidé, les pages se régénèrent avec le nouveau thème.
+- thème absent → installé (sauf sur un site qui a déjà son propre thème) ;
+- thème plus ancien **et pas en service** → remplacé (l'ancienne version est gardée dans `site/themes/.versions/`) ;
+- thème plus ancien **et en service** → **jamais remplacé en silence** : un bandeau apparaît dans l'administration
+  (« Mise à jour disponible : Heaven CMS 1.0.0 → 1.1.0 », bouton « Voir et installer »). L'installation se fait au clic, depuis
+  Administration → Mises à jour, avec confirmation du mot de passe ;
+- le cache des pages est vidé à chaque installation, les pages se régénèrent avec le nouveau thème.
 
-Un nouveau site doit **activer** le thème une fois : Administration → Thèmes → « Heaven CMS » → Activer.
+Un nouveau site sans thème propre doit **activer** le thème une fois : Administration → Thèmes → « Heaven CMS » → Activer.
+
+## Thèmes et fonctions propres à un site : le canal de mises à jour
+
+Un thème ou une fonction qui n'est pas livré avec le moteur (celui d'un site, par exemple) se met à jour par un **canal** :
+
+1. Le manifeste (`theme.json` ou `extension.json`) déclare l'adresse du canal :
+   `"update": { "channel": "https://raw.githubusercontent.com/<compte>/<depot-public>/main/latest.json" }`.
+2. Les paquets sont préparés avec `php tools/make-packages.php --out=<dossier> --repo=<compte>/<depot-public> <dossier-du-thème> …`
+   (archives + `latest.json` avec empreinte SHA-256), puis publiés à la racine de la branche `main` du dépôt public.
+3. Chaque site lit le canal depuis l'administration (au plus toutes les 12 h, ou au clic sur « Vérifier maintenant »).
+   S'il annonce une version plus récente, le même bandeau apparaît ; le clic télécharge l'archive, vérifie l'empreinte, la
+   taille, l'identifiant et la version annoncés, puis installe (et réactive le thème s'il est en service).
+
+Confiance : le canal et les archives doivent venir du **même dépôt** de raw.githubusercontent.com (HTTPS, sans
+redirection) ; une annonce vers un autre domaine est ignorée. Il n'y a pas de signature : la confiance est celle du compte
+propriétaire du dépôt du canal. À protéger en conséquence (double authentification GitHub).
 
 ## Vérifier
 
@@ -53,13 +72,14 @@ Un nouveau site doit **activer** le thème une fois : Administration → Thèmes
 
 ## Revenir en arrière
 
-- **Un site** : Administration → Thèmes, retour à la version précédente (gardée à chaque mise à jour).
+- **Un site** : Administration → Thèmes, retour à la version précédente (gardée à chaque mise à jour) ; l'ancienne version est aussi
+  dans `site/themes/.versions/`.
 - **Tous les sites** : `git revert` du commit fautif, puis nouvelle publication avec `tools/release.sh`. Une version
   *inférieure* n'est jamais réinstallée automatiquement : pour annuler une version, publier un correctif avec un numéro
   plus élevé.
 
 ## Limites
 
-- Un site qui a son **propre thème** (design très spécifique) ne reçoit pas cette mise à jour : il se met à jour comme
-  avant, par import de son archive. Pour un thème propre à un site : `tools/new-theme.php` (voir `THEME-STARTER.md`).
+- Un site qui a son **propre thème** (design très spécifique) ne reçoit pas le thème de base : il se met à jour par son
+  propre canal (voir plus haut). Pour créer un thème propre : `tools/new-theme.php` (voir `THEME-STARTER.md`).
 - Publier sur tous les sites d'un coup est risqué : toujours passer par un site de test d'abord.
