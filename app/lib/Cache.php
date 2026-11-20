@@ -30,6 +30,15 @@ final class Cache
     }
 
     /**
+     * Relit la génération après une purge faite par cette requête avant tout rendu (mise à jour d'un thème livré) : la
+     * page rendue ensuite est gardée au lieu d'être aussitôt jugée périmée. À ne pas appeler après avoir lu des contenus.
+     */
+    public static function refresh(): void
+    {
+        self::$generation = null;
+    }
+
+    /**
      * Génération du cache au début de la requête, lue une seule fois. Chaque purge en tire une nouvelle avant de vider le
      * cache : une page rendue à partir de données lues avant la purge (un contenu dépublié pendant son rendu) garde l'ancienne,
      * et index.php ne la sert jamais. Elle n'est jamais relue après une purge faite par la requête elle-même.

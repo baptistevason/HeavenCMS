@@ -1,0 +1,22 @@
+{
+  "schema": "heaven-theme/1",
+  "id": "heavencms",
+  "name": "Heaven CMS",
+  "version": "1.0.0",
+  "contract": 1,
+  "parent": "heaven",
+  "requires": {
+    "heaven": ">=2.0.0",
+    "php": ">=8.1"
+  },
+  "description": "Thème de base de Heaven, partagé par tous les sites et mis à jour avec le moteur. L'identité d'un site (logo, couleur d'accent, polices) se règle dans Réglages › Apparence : en-tête pleine largeur, menu mobile déroulant, partage des articles.",
+  "templates": [
+    "layout",
+    "single"
+  ],
+  "styles": [
+    "styles/site.css"
+  ],
+  "overrides": {},
+  "assets": []
+}
