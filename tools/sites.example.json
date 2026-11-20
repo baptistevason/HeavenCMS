@@ -1,0 +1,8 @@
+{
+  "branch": "release",
+  "repository": "git@github.com:<compte>/<depot-heaven>.git",
+  "sites": [
+    { "domain": "exemple.fr", "hebergeur": "hostinger", "compte": "u123456789", "dossier": "" },
+    { "domain": "autre-site.com", "hebergeur": "o2switch", "dossier": "" }
+  ]
+}

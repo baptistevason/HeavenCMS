@@ -1,16 +1,8 @@
 /* SPDX-License-Identifier: AGPL-3.0-only */
-/* Thème modèle Heaven : on change l'identité d'un site en modifiant le bloc « Palette » ci-dessous, rien d'autre.
-   Générer un nouveau thème à partir de celui-ci : php tools/new-theme.php (voir docs/THEME-STARTER.md). */
-
-/* ── Palette (à adapter) ── */
-:root{
-  --accent:#1f6feb;--on-accent:#fff;--link:#1858c0;--link-dark:#0f3f8f;
-  --bg:#ffffff;--bg-soft:#eef3fb;--card:#ffffff;--text:#16202e;--muted:#5a6678;--line:#d6deea;
-  --radius:10px;--shadow:none;
-  --font:system-ui,"Segoe UI",Roboto,sans-serif;
-  --font-head:system-ui,"Segoe UI",Roboto,sans-serif;
-  --logo-h:clamp(64px,9vw,104px);          /* hauteur du logo dans l'en-tête */
-}
+/* Thème de base Heaven : livré avec le moteur, mis à jour avec lui. Les couleurs et les polices viennent de
+   Réglages › Apparence (variables --accent, --font, --font-head…) : ne rien y fixer ici. Pour une identité qui sort de
+   ce cadre, créer un thème propre au site : php tools/new-theme.php (voir docs/THEME-STARTER.md). */
+:root{--logo-h:clamp(64px,9vw,104px)}   /* hauteur du logo dans l'en-tête */
 body{background:var(--bg);color:var(--text)}
 h1,h2,h3,.card-title,.brand{font-family:var(--font-head)}
 
@@ -52,5 +44,5 @@ h1,h2,h3,.card-title,.brand{font-family:var(--font-head)}
 .share ul{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:.5rem;justify-content:center}
 .share li{display:flex}
 .share a{display:inline-flex;align-items:center;min-height:48px;padding:0 1.1rem;border-radius:999px;background:var(--bg-soft);color:var(--link-dark);font-weight:700;text-decoration:none;border:1px solid var(--line);transition:background .15s,color .15s}
-.share a:hover,.share a:focus-visible{background:var(--link-dark);color:#fff}
+.share a:hover,.share a:focus-visible{background:var(--link-dark);color:var(--bg)}
 @media (max-width:34rem){.share ul{display:grid;grid-template-columns:1fr 1fr}.share a{flex:1;justify-content:center;padding:0 .6rem}}

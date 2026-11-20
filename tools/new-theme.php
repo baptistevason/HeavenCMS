@@ -1,7 +1,9 @@
 <?php
 // SPDX-License-Identifier: AGPL-3.0-only
 /**
- * Outil de développement (jamais livré) : crée le thème d'un nouveau site à partir du thème modèle.
+ * Outil de développement (jamais livré) : crée un thème propre à un site, à partir du thème de base livré avec Heaven
+ * (heaven/app/bundled-themes/heavencms). À n'utiliser que si l'identité du site sort du cadre de Réglages › Apparence : sinon,
+ * activer simplement le thème « Heaven CMS » (mis à jour avec le moteur).
  *
  *   php tools/new-theme.php <id> "<Nom du thème>" [--out=dossier] [--zip] [--accent=#1f6feb] [--bg=#ffffff] …
  *
@@ -25,7 +27,7 @@ foreach ($args as $a) {
 if (!preg_match('~^[a-z0-9][a-z0-9-]{0,40}$~', $id) || $name === '') {
     exit("Usage : php tools/new-theme.php <id> \"<Nom>\" [--out=dossier] [--zip] [--accent=#rrggbb …]\n  id : minuscules, chiffres et tirets.\n");
 }
-$src = dirname(__DIR__) . '/examples/themes/modele';
+$src = dirname(__DIR__) . '/heaven/app/bundled-themes/heavencms';
 $out = rtrim((string) ($opts['out'] ?? getcwd() . '/' . $id), '/');
 if (file_exists($out)) {
     exit("Le dossier $out existe déjà : rien n'a été écrit.\n");
@@ -60,16 +62,18 @@ $manifest = json_decode((string) file_get_contents($out . '/theme.json'), true, 
 $manifest['id'] = $id;
 $manifest['name'] = $name;
 $manifest['version'] = '1.0.0';
-$manifest['description'] = "Thème du site $name, créé à partir du thème modèle Heaven.";
+$manifest['description'] = "Thème du site $name, créé à partir du thème de base Heaven.";
 file_put_contents($out . '/theme.json', json_encode($manifest, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n");
 
-// site.css : valeurs de la palette (seul le bloc :root change).
+// site.css : la palette demandée est ajoutée en tête (elle l'emporte sur les réglages d'apparence du site).
 $css = (string) file_get_contents($out . '/styles/site.css');
-foreach ($set as $k => $v) {
-    $css = preg_replace('~(--' . preg_quote($k, '~') . ':)[^;]*;~', '$1' . addcslashes($v, '\\$') . ';', $css, 1, $n) ?? $css;
-    if ($n === 0) {
-        exit("Variable --$k introuvable dans la palette du thème modèle.\n");
+if ($set) {
+    $decl = '';
+    foreach ($set as $k => $v) {
+        $decl .= '--' . $k . ':' . $v . ';';
     }
+    $block = "/* ── Palette du site (à adapter) ── */\n:root{" . rtrim($decl, ';') . "}\n";
+    $css = preg_replace('~(\*/\n)~', '$1' . addcslashes($block, '\\$'), $css, 1) ?? $css;
 }
 file_put_contents($out . '/styles/site.css', $css);
 echo "✓ Thème « $name » créé : $out\n";

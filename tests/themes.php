@@ -29,6 +29,13 @@ use Heaven\Themes;
     };
 
     check('exemple minimal : conforme au contrat 1', Themes::validate($example) === [], implode(' | ', Themes::validate($example)));
+    // Thème de base livré avec le noyau : valide, listé comme livré, avec menu mobile et partage dans ses gabarits.
+    $base = dirname(__DIR__) . '/heaven/app/bundled-themes/heavencms';
+    check('thème de base livré : conforme au contrat 1', Themes::validate($base) === [], implode(' | ', Themes::validate($base)));
+    check('thème de base livré : reconnu par Themes::bundled()', isset(Themes::bundled()['heavencms']) && Themes::bundled()['heavencms']['version'] !== '');
+    check('thème de base : menu mobile sans script et partage des articles',
+        str_contains((string) file_get_contents($base . '/templates/layout.php'), 'nav-toggle') && str_contains((string) file_get_contents($base . '/templates/single.php'), 'class="share"')
+        && !str_contains((string) file_get_contents($base . '/styles/site.css'), '<script'));
     $refus = [
         'contrat non pris en charge' => $make('contrat', ['contract' => 2]),
         'identifiant invalide' => $make('Mauvais_ID', []),

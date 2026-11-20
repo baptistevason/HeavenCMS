@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 Thierry Gustin
 /**
- * Gabarit principal du site public (thème modèle : celui du noyau, plus le menu mobile déroulant).
+ * Gabarit principal du site public (thème de base : celui du noyau, plus le menu mobile déroulant).
  * À reporter ici si l'en-tête du noyau évolue.
  * Variables : $v['lang'], $v['head'], $v['css'], $v['content'], $v['current'], $v['id'], $v['class'], $v['nonce'] (page avec publicité)
  */

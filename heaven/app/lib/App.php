@@ -38,6 +38,8 @@ final class App
 
         // Migrations de la version installée (identifiées, idempotentes, sous verrou) : une lecture quand tout est fait.
         Migrations::run();
+        // Thèmes livrés avec le noyau : installés ou mis à jour après un déploiement (voir Themes::syncBundled).
+        Themes::syncBundled();
         date_default_timezone_set((string) Settings::get('timezone') ?: 'UTC');
         I18n::setLang((string) Settings::get('lang', 'fr'));
 

@@ -60,6 +60,75 @@ final class Themes
         return self::siteDir() . '/themes';
     }
 
+    /* ─────────────────────────────── Thèmes livrés avec le noyau ─────────────────────────────── */
+
+    /**
+     * Thèmes livrés avec le noyau (app/bundled-themes/<id>/) : id => manifeste (avec « dir »). Ils voyagent avec le code, donc
+     * avec chaque déploiement ; leur identité (couleurs, polices, logo) reste dans les réglages du site.
+     */
+    public static function bundled(): array
+    {
+        $out = [];
+        foreach (glob(HEAVEN_ROOT . '/app/bundled-themes/*/theme.json') ?: [] as $file) {
+            $id = basename(dirname($file));
+            $m = self::read($id, dirname($file));
+            if ($m !== null && ($m['id'] ?? '') === $id) {
+                $out[$id] = $m + ['dir' => dirname($file)];
+            }
+        }
+        ksort($out);
+        return $out;
+    }
+
+    /**
+     * Met à jour les thèmes livrés : installés s'ils manquent, remplacés quand la version livrée est plus récente (l'ancienne
+     * reste dans site/themes/.versions/ pour un retour en un clic), puis réactivés si c'est le thème actif. Une lecture
+     * de quelques fichiers par requête quand tout est à jour ; ne bloque ni n'interrompt jamais une page.
+     *
+     * @return array<string,string> id => version installée (ou message d'erreur)
+     */
+    public static function syncBundled(): array
+    {
+        try {
+            $bundled = self::bundled();
+            $versions = array_map(static fn (array $m): string => (string) $m['version'], $bundled);
+            if ($versions === [] || Store::read('themes-sync') === $versions) {
+                return [];
+            }
+            $lock = @fopen(Backup::dataDir() . '/themes-sync.lock', 'c');
+            if ($lock === false || !flock($lock, LOCK_EX | LOCK_NB)) {
+                return []; // une autre requête s'en occupe
+            }
+            $done = [];
+            $failed = false;
+            foreach ($bundled as $id => $b) {
+                $installed = self::read($id);
+                if ($installed !== null && !version_compare((string) $b['version'], (string) $installed['version'], '>')) {
+                    continue;
+                }
+                $r = self::install($b['dir']);
+                if ($r['ok'] && (string) (self::state()['active']['id'] ?? '') === $id) {
+                    $r = self::activate($id);
+                }
+                $done[$id] = $r['ok'] ? (string) $b['version'] : (string) $r['error'];
+                $failed = $failed || !$r['ok'];
+            }
+            if (!$failed) {
+                Store::write('themes-sync', $versions);
+            }
+            if ($done) {
+                self::forget();
+                Cache::purge();
+                Cache::refresh(); // aucune page n'a encore été rendue par cette requête
+                Log::security('themes_synced', ['themes' => json_encode($done)]);
+            }
+            return $done;
+        } catch (\Throwable $e) {
+            Log::error($e);
+            return [];
+        }
+    }
+
     public static function assetsDir(): string
     {
         return self::siteDir() . '/assets';

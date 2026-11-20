@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 Thierry Gustin
 /**
- * Page ou article (thème modèle : celui du noyau, plus le partage de fin d'article).
+ * Page ou article (thème de base : celui du noyau, plus le partage de fin d'article).
  * Variables : item, html, toc, author, category, crumbs, related, translations, featured, words, h1_in_content, lang
  */
 defined('HEAVEN') || exit;
